@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { getAllLessons } from "@/lib/data/curriculum";
 import { cn } from "@/lib/utils";
-import { BookOpen, Lock, Play, StickyNote } from "lucide-react";
+import { BookOpen, Lock, Play } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -39,7 +39,7 @@ export default function LessonsPage() {
     <div>
       <PageHeader
         title="Lessons"
-        description="Barcha darslar — har bir darsda shaxsiy Notes va Homework"
+        description="Barcha darslar — ma'lumotnoma, notes, homework har dars ichida"
       />
 
       <div className="flex flex-wrap gap-2 mb-6">
@@ -64,11 +64,6 @@ export default function LessonsPage() {
           </button>
         ))}
       </div>
-
-      <p className="text-xs text-text-muted mb-4 flex items-center gap-1">
-        <StickyNote className="w-3.5 h-3.5" />
-        Eslatma: Notes faqat dars ichida. Alohida Notes bo&apos;limi yo&apos;q.
-      </p>
 
       <div className="grid gap-3">
         {active.map((lesson, i) => (

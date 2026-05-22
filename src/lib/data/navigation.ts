@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Medal,
   Settings,
+  StickyNote,
   Target,
 } from "lucide-react";
 import { curricula } from "./curriculum";
@@ -22,6 +23,7 @@ export const mainNavItems = [
   { href: "/rankings", label: "Rankings", icon: Medal },
   { href: "/ai-assistant", label: "AI Assistant", icon: Bot },
   { href: "/homework", label: "Homework", icon: ClipboardList },
+  { href: "/notes", label: "Notes", icon: StickyNote },
   { href: "/support", label: "Support", icon: HelpCircle },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

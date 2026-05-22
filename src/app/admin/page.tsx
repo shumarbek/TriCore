@@ -2,7 +2,10 @@
 
 import { Card, StatCard } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { adminUsers } from "@/lib/data/admin-users";
+import { curricula } from "@/lib/data/curriculum";
 import { adminStats } from "@/lib/data/mock";
+import Link from "next/link";
 import { formatNumber } from "@/lib/utils";
 import {
   Activity,
@@ -34,8 +37,27 @@ export default function AdminDashboardPage() {
     <div>
       <PageHeader
         title="Admin Dashboard"
-        description="Platform overview and key metrics"
+        description="Curriculum, ma'lumotnoma, exam bank va foydalanuvchilar boshqaruvi"
       />
+
+      <div className="grid sm:grid-cols-3 gap-4 mb-8">
+        <Link href="/admin/content" className="glass-card rounded-2xl p-4 hover:border-primary/40 border border-border transition-colors block">
+          <p className="font-semibold text-sm">Content</p>
+          <p className="text-xs text-text-muted mt-1">
+            {curricula.length} fan · Section/Sub-section · Ma&apos;lumotnoma · Exam bank
+          </p>
+        </Link>
+        <Link href="/admin/users" className="glass-card rounded-2xl p-4 hover:border-primary/40 border border-border transition-colors block">
+          <p className="font-semibold text-sm">Users</p>
+          <p className="text-xs text-text-muted mt-1">
+            {adminUsers.length} user · Email/parol va OAuth ma&apos;lumotlari
+          </p>
+        </Link>
+        <Link href="/admin/analytics" className="glass-card rounded-2xl p-4 hover:border-primary/40 border border-border transition-colors block">
+          <p className="font-semibold text-sm">Analytics</p>
+          <p className="text-xs text-text-muted mt-1">Qiyin mavzular, retention, AI usage</p>
+        </Link>
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatCard

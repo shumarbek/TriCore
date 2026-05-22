@@ -30,7 +30,7 @@ export function Header({ onMenuClick, title }: HeaderProps) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
             type="search"
-            placeholder="Darslar va mavzularni qidirish..."
+            placeholder="Search lessons, notes, topics..."
             className="w-full pl-10 pr-4 py-2 rounded-xl bg-surface-elevated/80 border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>

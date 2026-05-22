@@ -32,7 +32,7 @@ Open [http://localhost:3000](http://localhost:3000)
 | `/practice-exams` | AI custom exams |
 | `/rankings` | Global & subject rankings |
 | `/ai-assistant` | Scientific AI chat |
-| `/homework`, `/support`, `/settings` | Learning tools (notes — har dars ichida) |
+| `/homework`, `/notes`, `/support`, `/settings` | Learning tools |
 | `/admin`, `/admin/content`, `/admin/users`, `/admin/analytics` | Admin panel |
 
 ## Design
@@ -56,5 +56,14 @@ Open [http://localhost:3000](http://localhost:3000)
 ## Homework
 
 `/homework` — faqat har sectiondagi **oxirgi o'tilgan dars** vazifasi. Qolganlari dars ichidagi Homework tab.
+
+## Ma'lumotnoma
+
+Har bir darsda **Ma'lumotnoma** tab — qoidalar va atamalar (admin tahrirlaydi).
+
+## Admin
+
+- **Content**: curriculum, ma'lumotnoma, practice exam savollar banki (sub-section bo'yicha)
+- **Users**: to'liq profil, OAuth yoki email/parol (parol ko'rish — email auth)
 
 This is a **frontend-only** build with mock data. Connect NestJS + PostgreSQL + JWT backend for production.
