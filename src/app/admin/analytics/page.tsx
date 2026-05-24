@@ -2,120 +2,180 @@
 
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { ProgressBar } from "@/components/ui/ProgressBar";
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Line,
   LineChart,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 
-const retentionData = [
-  { week: "W1", rate: 92 },
-  { week: "W2", rate: 78 },
-  { week: "W3", rate: 65 },
-  { week: "W4", rate: 58 },
+const registrations = [
+  { month: "Yan", count: 420 },
+  { month: "Fev", count: 680 },
+  { month: "Mar", count: 920 },
+  { month: "Apr", count: 1100 },
+  { month: "May", count: 1450 },
 ];
 
-const difficultTopics = [
-  { topic: "Trigonometry", subject: "Math", failRate: 42 },
-  { topic: "Electromagnetism", subject: "Physics", failRate: 38 },
-  { topic: "Organic Reactions", subject: "Chemistry", failRate: 35 },
-  { topic: "Calculus Basics", subject: "Math", failRate: 31 },
+const dailyActive = [
+  { day: "Dush", users: 890 },
+  { day: "Sesh", users: 1020 },
+  { day: "Chor", users: 980 },
+  { day: "Pay", users: 1150 },
+  { day: "Jum", users: 1280 },
+  { day: "Shan", users: 1420 },
+  { day: "Yak", users: 1100 },
 ];
 
-const aiUsageData = [
-  { day: "Mon", requests: 2100 },
-  { day: "Tue", requests: 2450 },
-  { day: "Wed", requests: 1980 },
-  { day: "Thu", requests: 2890 },
-  { day: "Fri", requests: 3120 },
+const aiUsage = [
+  { day: "Dush", requests: 2100 },
+  { day: "Sesh", requests: 2450 },
+  { day: "Chor", requests: 1980 },
+  { day: "Pay", requests: 2890 },
+  { day: "Jum", requests: 3120 },
+  { day: "Shan", requests: 3500 },
+  { day: "Yak", requests: 2800 },
 ];
+
+const usersBySubject = [
+  { name: "Matematika", value: 4820, color: "var(--primary)" },
+  { name: "Fizika", value: 3910, color: "var(--secondary)" },
+  { name: "Kimyo", value: 2140, color: "var(--success)" },
+];
+
+const tooltipStyle = {
+  contentStyle: {
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: "12px",
+  },
+};
 
 export default function AdminAnalyticsPage() {
   return (
     <div>
       <PageHeader
         title="Analytics"
-        description="Difficult topics, retention, scores, watch time, AI usage"
+        description="Platformaga qo'shilish, kunlik aktivlik, AI foydalanish, fan bo'yicha userlar"
       />
 
-      <div className="grid lg:grid-cols-2 gap-6 mb-8">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <Card>
-          <h3 className="font-semibold mb-4">User Retention</h3>
-          <div className="h-56">
+          <p className="text-sm text-text-muted">Jami ro&apos;yxatdan o&apos;tgan</p>
+          <p className="text-3xl font-bold mt-1">12,847</p>
+          <p className="text-xs text-success mt-1">+12% oylik</p>
+        </Card>
+        <Card>
+          <p className="text-sm text-text-muted">Bugun aktiv</p>
+          <p className="text-3xl font-bold mt-1">3,421</p>
+          <p className="text-xs text-text-muted mt-1">DAU</p>
+        </Card>
+        <Card>
+          <p className="text-sm text-text-muted">AI so&apos;rovlar (bugun)</p>
+          <p className="text-3xl font-bold mt-1">3,120</p>
+          <p className="text-xs text-accent mt-1">+8% kechagidan</p>
+        </Card>
+        <Card>
+          <p className="text-sm text-text-muted">Eng ko&apos;p fan</p>
+          <p className="text-3xl font-bold mt-1">Math</p>
+          <p className="text-xs text-text-muted mt-1">4,820 user</p>
+        </Card>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6 mb-6">
+        <Card>
+          <h3 className="font-semibold mb-4">Platformaga qo&apos;shilish (oylik)</h3>
+          <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={retentionData}>
+              <BarChart data={registrations}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="week" tick={{ fill: "var(--text-muted)", fontSize: 12 }} />
+                <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 12 }} />
                 <YAxis tick={{ fill: "var(--text-muted)", fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "12px",
-                  }}
-                />
-                <Line type="monotone" dataKey="rate" stroke="var(--accent)" strokeWidth={2} dot={{ fill: "var(--accent)" }} />
-              </LineChart>
+                <Tooltip {...tooltipStyle} />
+                <Bar dataKey="count" fill="var(--primary)" radius={[6, 6, 0, 0]} name="Yangi user" />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </Card>
 
         <Card>
-          <h3 className="font-semibold mb-4">AI Assistant Usage</h3>
-          <div className="h-56">
+          <h3 className="font-semibold mb-4">Kunlik aktivlik (DAU)</h3>
+          <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={aiUsageData}>
+              <LineChart data={dailyActive}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="day" tick={{ fill: "var(--text-muted)", fontSize: 12 }} />
                 <YAxis tick={{ fill: "var(--text-muted)", fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "12px",
-                  }}
+                <Tooltip {...tooltipStyle} />
+                <Line
+                  type="monotone"
+                  dataKey="users"
+                  stroke="var(--accent)"
+                  strokeWidth={2}
+                  dot={{ fill: "var(--accent)" }}
+                  name="Aktiv userlar"
                 />
-                <Bar dataKey="requests" fill="var(--secondary)" radius={[6, 6, 0, 0]} />
-              </BarChart>
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </Card>
       </div>
 
-      <Card>
-        <h3 className="font-semibold mb-4">Most Difficult Topics</h3>
-        <div className="space-y-4">
-          {difficultTopics.map((t) => (
-            <div key={t.topic}>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-medium">{t.topic}</span>
-                <span className="text-text-muted">{t.subject} · {t.failRate}% fail rate</span>
-              </div>
-              <ProgressBar value={t.failRate} color="warning" />
-            </div>
-          ))}
-        </div>
-      </Card>
+      <div className="grid lg:grid-cols-2 gap-6">
+        <Card>
+          <h3 className="font-semibold mb-4">AI Assistant foydalanishi</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={aiUsage}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="day" tick={{ fill: "var(--text-muted)", fontSize: 12 }} />
+                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 12 }} />
+                <Tooltip {...tooltipStyle} />
+                <Bar dataKey="requests" fill="var(--secondary)" radius={[6, 6, 0, 0]} name="So'rovlar" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
 
-      <div className="grid sm:grid-cols-3 gap-4 mt-6">
         <Card>
-          <p className="text-sm text-text-muted">Avg Exam Score</p>
-          <p className="text-3xl font-bold mt-1">74%</p>
-        </Card>
-        <Card>
-          <p className="text-sm text-text-muted">Avg Watch Time</p>
-          <p className="text-3xl font-bold mt-1">18m</p>
-        </Card>
-        <Card>
-          <p className="text-sm text-text-muted">Homework Submit Rate</p>
-          <p className="text-3xl font-bold mt-1">82%</p>
+          <h3 className="font-semibold mb-4">O&apos;rganilayotgan fan bo&apos;yicha userlar</h3>
+          <div className="h-64 flex items-center">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={usersBySubject}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={90}
+                  label={({ name, percent }) =>
+                    `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
+                  }
+                >
+                  {usersBySubject.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip {...tooltipStyle} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <ul className="flex justify-center gap-4 mt-2 text-sm text-text-muted">
+            {usersBySubject.map((s) => (
+              <li key={s.name}>
+                {s.name}: {s.value.toLocaleString()}
+              </li>
+            ))}
+          </ul>
         </Card>
       </div>
     </div>

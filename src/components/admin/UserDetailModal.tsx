@@ -29,9 +29,10 @@ const authLabels = {
 interface UserDetailModalProps {
   user: AdminUser | null;
   onClose: () => void;
+  onBanToggle?: () => void;
 }
 
-export function UserDetailModal({ user, onClose }: UserDetailModalProps) {
+export function UserDetailModal({ user, onClose, onBanToggle }: UserDetailModalProps) {
   const [tab, setTab] = useState<"profile" | "learning" | "security" | "activity">("profile");
   const [showPassword, setShowPassword] = useState(false);
 
@@ -75,6 +76,9 @@ export function UserDetailModal({ user, onClose }: UserDetailModalProps) {
                   </Badge>
                   <Badge variant={user.status === "active" ? "success" : "danger"}>
                     {user.status}
+                  </Badge>
+                  <Badge variant={user.onlineStatus === "online" ? "success" : "muted"}>
+                    {user.onlineStatus}
                   </Badge>
                 </div>
               </div>
@@ -218,14 +222,16 @@ export function UserDetailModal({ user, onClose }: UserDetailModalProps) {
           </div>
 
           <div className="p-4 border-t border-border flex gap-2 justify-end">
-            {user.status === "active" ? (
-              <Button variant="danger" size="sm">
-                Ban qilish
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm">
-                Ban ni olib tashlash
-              </Button>
+            {onBanToggle && (
+              user.status === "active" ? (
+                <Button variant="danger" size="sm" onClick={onBanToggle}>
+                  Ban qilish
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={onBanToggle}>
+                  Ban ni olib tashlash
+                </Button>
+              )
             )}
             <Button variant="primary" size="sm" onClick={onClose}>
               Yopish

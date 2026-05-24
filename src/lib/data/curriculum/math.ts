@@ -84,16 +84,9 @@ export const mathematicsCurriculum: SubjectCurriculum = {
           name: "Planimetriya",
           lessons: buildLessons("math-geo-plan", planimetriya, 5),
         },
-      ],
-    },
-    {
-      id: "stereometriya",
-      name: "Stereometriya",
-      order: 3,
-      subSections: [
         {
-          id: "stereometriya-asoslari",
-          name: "Stereometriya mavzulari",
+          id: "stereometriya",
+          name: "Stereometriya",
           lessons: buildLessons("math-stereo", stereometriya, 0),
         },
       ],

@@ -15,6 +15,7 @@ export interface AdminUser {
   password?: string;
   phone?: string;
   status: "active" | "banned" | "pending";
+  onlineStatus: "online" | "offline";
   registeredAt: string;
   lastLogin: string;
   deviceInfo: string;
@@ -38,6 +39,7 @@ export const adminUsers: AdminUser[] = [
     password: "TriCore#2026!",
     phone: "+998 90 123 45 67",
     status: "active",
+    onlineStatus: "online",
     registeredAt: "2025-11-12",
     lastLogin: "2026-05-21 09:14",
     deviceInfo: "Windows 10 · Chrome 124",
@@ -61,6 +63,7 @@ export const adminUsers: AdminUser[] = [
     email: "alex.chen@gmail.com",
     authMethod: "google",
     status: "active",
+    onlineStatus: "online",
     registeredAt: "2025-09-03",
     lastLogin: "2026-05-21 08:55",
     deviceInfo: "macOS · Safari 17",
@@ -83,6 +86,7 @@ export const adminUsers: AdminUser[] = [
     email: "sara.kim@gmail.com",
     authMethod: "google",
     status: "active",
+    onlineStatus: "offline",
     registeredAt: "2025-10-18",
     lastLogin: "2026-05-20 16:40",
     deviceInfo: "Android 14 · Chrome Mobile",
@@ -105,6 +109,7 @@ export const adminUsers: AdminUser[] = [
     authMethod: "email",
     password: "Study@Physics99",
     status: "active",
+    onlineStatus: "offline",
     registeredAt: "2026-01-05",
     lastLogin: "2026-05-19 14:22",
     deviceInfo: "Windows 11 · Edge 122",
@@ -128,6 +133,7 @@ export const adminUsers: AdminUser[] = [
     authMethod: "email",
     password: "TempPass#001",
     status: "banned",
+    onlineStatus: "offline",
     registeredAt: "2025-12-01",
     lastLogin: "2026-04-02 11:00",
     deviceInfo: "Linux · Firefox 125",
@@ -149,6 +155,7 @@ export const adminUsers: AdminUser[] = [
     email: "elena@yandex.ru",
     authMethod: "github",
     status: "active",
+    onlineStatus: "online",
     registeredAt: "2026-02-14",
     lastLogin: "2026-05-21 07:30",
     deviceInfo: "Windows 10 · Chrome 124",

@@ -4,12 +4,15 @@ import {
   BookOpen,
   Bot,
   ClipboardList,
+  Database,
   FileText,
   GraduationCap,
   HelpCircle,
   LayoutDashboard,
   Medal,
+  MessageSquare,
   Settings,
+  Sliders,
   StickyNote,
   Target,
 } from "lucide-react";
@@ -31,8 +34,11 @@ export const mainNavItems = [
 export const adminNavItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/content", label: "Content", icon: BookOpen },
+  { href: "/admin/exams", label: "Exam Bank", icon: Database },
   { href: "/admin/users", label: "Users", icon: FileText },
+  { href: "/admin/messages", label: "Messages", icon: MessageSquare },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/admin/ai-settings", label: "AI Settings", icon: Sliders },
 ];
 
 export const subjects = curricula.map((c) => ({

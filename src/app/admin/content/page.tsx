@@ -1,274 +1,286 @@
 "use client";
 
+import { LessonEditorModal } from "@/components/admin/LessonEditorModal";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { curricula, countQuestionsInScope } from "@/lib/data/curriculum";
-import { cn } from "@/lib/utils";
+import { Input, Select, Textarea } from "@/components/ui/Input";
 import {
-  BookMarked,
-  BookOpen,
-  ChevronDown,
-  ChevronRight,
-  Database,
-  FileText,
-  Layers,
-  Plus,
-  ScrollText,
-} from "lucide-react";
+  getAdminLessonStats,
+  getAdminLessons,
+  type LessonAdminData,
+} from "@/lib/data/admin-lessons";
+import { curricula, getSections, getSubSections } from "@/lib/data/curriculum";
+import { cn } from "@/lib/utils";
+import { BookOpen, Layers, Pencil, Plus, Search, Video } from "lucide-react";
 import { useMemo, useState } from "react";
 
-type ContentTab = "lessons" | "handbook" | "exams" | "homework";
-
 export default function AdminContentPage() {
-  const [tab, setTab] = useState<ContentTab>("lessons");
-  const [expandedSubject, setExpandedSubject] = useState<string | null>("physics");
+  const stats = getAdminLessonStats();
+  const [lessons, setLessons] = useState(getAdminLessons);
+  const [search, setSearch] = useState("");
+  const [filterSubject, setFilterSubject] = useState("all");
+  const [editing, setEditing] = useState<LessonAdminData | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
 
-  const stats = useMemo(() => {
-    let lessons = 0;
-    let subSections = 0;
-    let sections = 0;
-    for (const s of curricula) {
-      sections += s.sections.length;
-      for (const sec of s.sections) {
-        subSections += sec.subSections.length;
-        for (const sub of sec.subSections) {
-          lessons += sub.lessons.length;
-        }
-      }
-    }
-    const examQuestions = curricula.reduce((n, subj) => {
-      return (
-        n +
-        subj.sections.reduce(
-          (sn, sec) =>
-            sn +
-            sec.subSections.reduce(
-              (qn, ss) => qn + countQuestionsInScope(subj.id, sec.id, ss.id),
-              0
-            ),
-          0
-        )
-      );
-    }, 0);
-    return { lessons, subSections, sections, examQuestions };
-  }, []);
+  const [newLesson, setNewLesson] = useState({
+    subjectId: "mathematics",
+    sectionId: "",
+    subSectionId: "",
+    title: "",
+    videoUrl: "",
+    handbookRules: "",
+    handbookTerms: "",
+    formulas: "",
+    miniExamCount: 10,
+    homeworkPdf: "",
+    homeworkDeadline: "",
+  });
+
+  const sections = useMemo(
+    () => getSections(newLesson.subjectId),
+    [newLesson.subjectId]
+  );
+  const subSections = useMemo(
+    () =>
+      getSubSections(
+        newLesson.subjectId,
+        newLesson.sectionId || sections[0]?.id || ""
+      ),
+    [newLesson.subjectId, newLesson.sectionId, sections]
+  );
+
+  const filtered = useMemo(() => {
+    return lessons.filter((l) => {
+      const q = search.toLowerCase();
+      const matchQ =
+        !q ||
+        l.title.toLowerCase().includes(q) ||
+        l.id.toLowerCase().includes(q);
+      const matchSub = filterSubject === "all" || l.subjectId === filterSubject;
+      return matchQ && matchSub;
+    });
+  }, [lessons, search, filterSubject]);
+
+  const handleSave = (data: LessonAdminData) => {
+    setLessons((prev) => prev.map((l) => (l.id === data.id ? data : l)));
+    setEditing(null);
+  };
+
+  const handleAddLesson = () => {
+    const subj = curricula.find((c) => c.id === newLesson.subjectId);
+    const sec = subj?.sections.find((s) => s.id === newLesson.sectionId);
+    const sub = sec?.subSections.find((s) => s.id === newLesson.subSectionId);
+    const id = `new-${Date.now()}`;
+    const item: LessonAdminData = {
+      id,
+      title: newLesson.title || "Yangi dars",
+      subjectId: newLesson.subjectId,
+      subjectName: subj?.name ?? "",
+      sectionId: newLesson.sectionId,
+      sectionName: sec?.name ?? "",
+      subSectionId: newLesson.subSectionId,
+      subSectionName: sub?.name ?? "",
+      order: 999,
+      videoUrl: newLesson.videoUrl,
+      handbookRules: newLesson.handbookRules,
+      handbookTerms: newLesson.handbookTerms,
+      formulas: newLesson.formulas,
+      miniExamCount: newLesson.miniExamCount,
+      homeworkPdf: newLesson.homeworkPdf,
+      homeworkDeadline: newLesson.homeworkDeadline,
+    };
+    setLessons((prev) => [item, ...prev]);
+    setShowAdd(false);
+    setEditing(item);
+  };
 
   return (
     <div>
       <PageHeader
         title="Content Management"
-        description="Curriculum: Section → Sub-section → Dars. Ma'lumotnoma, exam bank, homework"
+        description="Darslarni tahrirlash: title, video, ma'lumotnoma, formula, mini exam, homework"
         action={
-          <Button variant="primary">
+          <Button variant="primary" onClick={() => setShowAdd(!showAdd)}>
             <Plus className="w-4 h-4" /> Yangi dars
           </Button>
         }
       />
 
-      <div className="grid sm:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: "Fanlar", count: curricula.length, icon: BookOpen },
-          { label: "Sectionlar", count: stats.sections, icon: Layers },
-          { label: "Darslar", count: stats.lessons, icon: FileText },
-          { label: "Exam savollar (bank)", count: stats.examQuestions, icon: Database },
-        ].map((item) => (
-          <Card key={item.label}>
-            <item.icon className="w-7 h-7 text-primary mb-2" />
-            <p className="text-2xl font-bold">{item.count}</p>
-            <p className="text-sm text-text-muted">{item.label}</p>
-          </Card>
-        ))}
-      </div>
-
-      <div className="flex flex-wrap gap-2 mb-6">
-        {(
-          [
-            ["lessons", "Darslar", BookOpen],
-            ["handbook", "Ma'lumotnoma", BookMarked],
-            ["exams", "Practice Exam Bank", Database],
-            ["homework", "Homework", FileText],
-          ] as const
-        ).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-colors",
-              tab === id
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border text-text-muted hover:text-text"
-            )}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "lessons" && (
+      <div className="grid sm:grid-cols-3 gap-4 mb-6">
         <Card>
-          <h3 className="font-semibold mb-4">Curriculum tuzilmasi</h3>
-          <p className="text-sm text-text-muted mb-4">
-            Subject → Section → Sub-section → Lesson. Har bir darsda video, ma&apos;lumotnoma,
-            formulas, mini exam, homework.
-          </p>
-          <div className="space-y-3">
-            {curricula.map((subject) => (
-              <div key={subject.id} className="rounded-xl border border-border overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setExpandedSubject(expandedSubject === subject.id ? null : subject.id)
-                  }
-                  className="w-full flex items-center justify-between p-4 hover:bg-surface-elevated/50 text-left"
-                >
-                  <span className="font-semibold">{subject.name}</span>
-                  <span className="flex items-center gap-2 text-sm text-text-muted">
-                    {subject.sections.length} section
-                    {expandedSubject === subject.id ? (
-                      <ChevronDown className="w-4 h-4" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4" />
-                    )}
-                  </span>
-                </button>
-                {expandedSubject === subject.id && (
-                  <div className="px-4 pb-4 space-y-3 border-t border-border">
-                    {subject.sections.map((sec) => (
-                      <div key={sec.id} className="pl-2">
-                        <p className="text-sm font-medium text-primary">{sec.name}</p>
-                        {sec.subSections.map((sub) => (
-                          <div
-                            key={sub.id}
-                            className="ml-3 mt-1 flex items-center justify-between text-xs text-text-muted py-1"
-                          >
-                            <span>{sub.name}</span>
-                            <Badge variant="muted">{sub.lessons.length} dars</Badge>
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+          <BookOpen className="w-7 h-7 text-primary mb-2" />
+          <p className="text-2xl font-bold">{stats.subjects}</p>
+          <p className="text-sm text-text-muted">Fanlar</p>
+        </Card>
+        <Card>
+          <Layers className="w-7 h-7 text-accent mb-2" />
+          <p className="text-2xl font-bold">{stats.sections}</p>
+          <p className="text-sm text-text-muted">Sectionlar</p>
+        </Card>
+        <Card>
+          <Video className="w-7 h-7 text-secondary mb-2" />
+          <p className="text-2xl font-bold">{stats.lessons}</p>
+          <p className="text-sm text-text-muted">Darslar</p>
+        </Card>
+      </div>
+
+      {showAdd && (
+        <Card className="mb-6 border-primary/30">
+          <h3 className="font-semibold mb-4">Yangi dars qo&apos;shish</h3>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Select
+              label="Fan"
+              options={curricula.map((c) => ({ value: c.id, label: c.name }))}
+              value={newLesson.subjectId}
+              onChange={(e) =>
+                setNewLesson((n) => ({
+                  ...n,
+                  subjectId: e.target.value,
+                  sectionId: "",
+                  subSectionId: "",
+                }))
+              }
+            />
+            <Select
+              label="Section"
+              options={sections.map((s) => ({ value: s.id, label: s.name }))}
+              value={newLesson.sectionId || sections[0]?.id || ""}
+              onChange={(e) =>
+                setNewLesson((n) => ({
+                  ...n,
+                  sectionId: e.target.value,
+                  subSectionId: "",
+                }))
+              }
+            />
+            <Select
+              label="Sub-section"
+              options={subSections.map((s) => ({ value: s.id, label: s.name }))}
+              value={newLesson.subSectionId || subSections[0]?.id || ""}
+              onChange={(e) =>
+                setNewLesson((n) => ({ ...n, subSectionId: e.target.value }))
+              }
+            />
+            <Input
+              label="Title"
+              value={newLesson.title}
+              onChange={(e) => setNewLesson((n) => ({ ...n, title: e.target.value }))}
+            />
+            <Input
+              label="Video URL"
+              className="sm:col-span-2"
+              value={newLesson.videoUrl}
+              onChange={(e) => setNewLesson((n) => ({ ...n, videoUrl: e.target.value }))}
+            />
+            <Textarea
+              label="Ma'lumotnoma — qoidalar"
+              value={newLesson.handbookRules}
+              onChange={(e) =>
+                setNewLesson((n) => ({ ...n, handbookRules: e.target.value }))
+              }
+            />
+            <Textarea
+              label="Ma'lumotnoma — atamalar"
+              value={newLesson.handbookTerms}
+              onChange={(e) =>
+                setNewLesson((n) => ({ ...n, handbookTerms: e.target.value }))
+              }
+            />
+            <Textarea
+              label="Formulalar"
+              className="sm:col-span-2"
+              value={newLesson.formulas}
+              onChange={(e) => setNewLesson((n) => ({ ...n, formulas: e.target.value }))}
+            />
           </div>
-          <div className="grid sm:grid-cols-2 gap-3 mt-6 text-sm">
-            {[
-              "Dars nomi va tartib raqami",
-              "Video URL",
-              "Ma'lumotnoma (qoidalar + atamalar)",
-              "Formula panel",
-              "Mini exam savollari",
-              "Homework PDF",
-            ].map((f) => (
-              <div
-                key={f}
-                className="p-3 rounded-xl border border-dashed border-border hover:border-primary/40"
-              >
-                + {f}
-              </div>
-            ))}
+          <div className="flex gap-2 mt-4">
+            <Button variant="primary" onClick={handleAddLesson}>
+              Darsni yaratish
+            </Button>
+            <Button variant="outline" onClick={() => setShowAdd(false)}>
+              Bekor
+            </Button>
           </div>
         </Card>
       )}
 
-      {tab === "handbook" && (
-        <Card>
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <ScrollText className="w-5 h-5 text-primary" />
-            Ma&apos;lumotnoma tahriri
-          </h3>
-          <p className="text-sm text-text-muted mb-4">
-            Har bir dars uchun alohida qoidalar va atamalar. Foydalanuvchi dars ichida
-            &quot;Ma&apos;lumotnoma&quot; tab&apos;ida ko&apos;radi.
-          </p>
-          <div className="space-y-2">
-            {[
-              { lesson: "math-geo-plan-5", title: "To'g'ri burchakli uchburchak" },
-              { lesson: "phys-mol-4", title: "Ideal gaz holatining tenglamasi" },
-              { lesson: "phys-din-1", title: "Nyuton qonunlari" },
-            ].map((h) => (
-              <div
-                key={h.lesson}
-                className="flex items-center justify-between p-3 rounded-xl bg-surface-elevated/50"
+      <Card className="mb-6">
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <Input
+              placeholder="Dars qidirish..."
+              className="pl-10"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setFilterSubject("all")}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-sm border",
+                filterSubject === "all"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-text-muted"
+              )}
+            >
+              Barchasi
+            </button>
+            {curricula.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setFilterSubject(c.id)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-sm border",
+                  filterSubject === c.id
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-text-muted"
+                )}
               >
-                <div>
-                  <p className="text-sm font-medium">{h.title}</p>
-                  <p className="text-xs text-text-muted font-mono">{h.lesson}</p>
-                </div>
-                <Button variant="outline" size="sm">
-                  Tahrirlash
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      <div className="space-y-2">
+        {filtered.slice(0, 50).map((lesson) => (
+          <Card key={lesson.id} hover className="!p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">{lesson.title}</p>
+                <p className="text-xs text-text-muted truncate">
+                  {lesson.subjectName} · {lesson.sectionName} · {lesson.subSectionName}
+                </p>
+                <p className="text-xs text-text-muted font-mono mt-0.5">{lesson.id}</p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="muted">{lesson.miniExamCount} MCQ</Badge>
+                <Button variant="primary" size="sm" onClick={() => setEditing(lesson)}>
+                  <Pencil className="w-3.5 h-3.5" /> Tahrirlash
                 </Button>
               </div>
-            ))}
-          </div>
-          <Button variant="primary" className="mt-4">
-            + Qoidalar / atamalar qo&apos;shish
-          </Button>
-        </Card>
-      )}
-
-      {tab === "exams" && (
-        <Card>
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <Database className="w-5 h-5 text-accent" />
-            Practice Exam — savollar banki
-          </h3>
-          <p className="text-sm text-text-muted mb-4">
-            Har bir <strong>sub-section</strong> uchun admin MCQ savollar yaratadi. Foydalanuvchi
-            Practice Exams da Subject + Section + Sub-section (yoki All) tanlaydi — savollar
-            random tanlanadi. <strong>Difficulty yo&apos;q.</strong>
+            </div>
+          </Card>
+        ))}
+        {filtered.length > 50 && (
+          <p className="text-center text-sm text-text-muted py-2">
+            +{filtered.length - 50} ta dars yana mavjud (filtrni toraytiring)
           </p>
-          <div className="space-y-3">
-            {curricula.flatMap((subj) =>
-              subj.sections.flatMap((sec) =>
-                sec.subSections.map((ss) => (
-                  <div
-                    key={`${subj.id}-${ss.id}`}
-                    className="flex items-center justify-between p-3 rounded-xl border border-border"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{ss.name}</p>
-                      <p className="text-xs text-text-muted">
-                        {subj.name} · {sec.name}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="accent">
-                        ~{countQuestionsInScope(subj.id, sec.id, ss.id)} savol
-                      </Badge>
-                      <Button variant="ghost" size="sm">
-                        Bankni boshqarish
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )
-            )}
-          </div>
-        </Card>
-      )}
+        )}
+      </div>
 
-      {tab === "homework" && (
-        <Card>
-          <h3 className="font-semibold mb-4">Homework qoidalari</h3>
-          <ul className="text-sm text-text-muted space-y-2 list-disc pl-5">
-            <li>Har bir darsda alohida homework (dars ichidagi tab).</li>
-            <li>
-              <strong>/homework</strong> sahifasida faqat har bir section bo&apos;yicha oxirgi
-              o&apos;tilgan dars vazifasi ko&apos;rinadi.
-            </li>
-            <li>Admin har dars uchun PDF va muddat belgilaydi.</li>
-          </ul>
-          <Button variant="outline" className="mt-4">
-            Section homework sozlamalari
-          </Button>
-        </Card>
-      )}
+      <LessonEditorModal
+        lesson={editing}
+        onClose={() => setEditing(null)}
+        onSave={handleSave}
+      />
     </div>
   );
 }

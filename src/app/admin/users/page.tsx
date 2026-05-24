@@ -17,12 +17,13 @@ const authIcon = {
 };
 
 export default function AdminUsersPage() {
+  const [users, setUsers] = useState(adminUsers);
   const [search, setSearch] = useState("");
-  const [authFilter, setAuthFilter] = useState<string>("all");
+  const [authFilter, setAuthFilter] = useState("all");
   const [selected, setSelected] = useState<AdminUser | null>(null);
 
   const filtered = useMemo(() => {
-    return adminUsers.filter((u) => {
+    return users.filter((u) => {
       const q = search.toLowerCase();
       const matchSearch =
         !q ||
@@ -32,31 +33,52 @@ export default function AdminUsersPage() {
       const matchAuth = authFilter === "all" || u.authMethod === authFilter;
       return matchSearch && matchAuth;
     });
-  }, [search, authFilter]);
+  }, [users, search, authFilter]);
+
+  const toggleBan = (id: string) => {
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === id
+          ? { ...u, status: u.status === "banned" ? "active" : "banned" }
+          : u
+      )
+    );
+    if (selected?.id === id) {
+      setSelected((s) =>
+        s ? { ...s, status: s.status === "banned" ? "active" : "banned" } : s
+      );
+    }
+  };
 
   return (
     <div>
       <PageHeader
         title="User Management"
-        description="Tizimdagi barcha ma'lumotlar: progress, kirish tarixi, email/parol (faqat email auth)"
+        description="Email/parol, online/offline, holat — ko'rish va tizimdan chetlatish (ban)"
       />
 
-      <div className="grid sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid sm:grid-cols-4 gap-4 mb-6">
         <Card>
-          <p className="text-2xl font-bold">{adminUsers.length}</p>
-          <p className="text-sm text-text-muted">Jami foydalanuvchilar</p>
+          <p className="text-2xl font-bold">{users.length}</p>
+          <p className="text-sm text-text-muted">Jami</p>
+        </Card>
+        <Card>
+          <p className="text-2xl font-bold text-success">
+            {users.filter((u) => u.onlineStatus === "online").length}
+          </p>
+          <p className="text-sm text-text-muted">Online</p>
         </Card>
         <Card>
           <p className="text-2xl font-bold text-primary">
-            {adminUsers.filter((u) => u.authMethod === "email").length}
+            {users.filter((u) => u.authMethod === "email").length}
           </p>
-          <p className="text-sm text-text-muted">Email + parol</p>
+          <p className="text-sm text-text-muted">Email/Parol</p>
         </Card>
         <Card>
-          <p className="text-2xl font-bold text-accent">
-            {adminUsers.filter((u) => u.authMethod !== "email").length}
+          <p className="text-2xl font-bold text-danger">
+            {users.filter((u) => u.status === "banned").length}
           </p>
-          <p className="text-sm text-text-muted">OAuth (Google/GitHub)</p>
+          <p className="text-sm text-text-muted">Banned</p>
         </Card>
       </div>
 
@@ -82,7 +104,7 @@ export default function AdminUsersPage() {
                 key={f.id}
                 type="button"
                 onClick={() => setAuthFilter(f.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-sm border ${
                   authFilter === f.id
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-border text-text-muted"
@@ -92,7 +114,6 @@ export default function AdminUsersPage() {
               </button>
             ))}
           </div>
-          <Button variant="outline">Export CSV</Button>
         </div>
       </Card>
 
@@ -101,12 +122,11 @@ export default function AdminUsersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-text-muted border-b border-border">
-                <th className="pb-3 pr-4">Foydalanuvchi</th>
-                <th className="pb-3 pr-4">Email</th>
-                <th className="pb-3 pr-4">Auth</th>
-                <th className="pb-3 pr-4">Progress</th>
-                <th className="pb-3 pr-4">XP</th>
-                <th className="pb-3 pr-4">Holat</th>
+                <th className="pb-3 pr-3">User</th>
+                <th className="pb-3 pr-3">Email</th>
+                <th className="pb-3 pr-3">Parol</th>
+                <th className="pb-3 pr-3">Online</th>
+                <th className="pb-3 pr-3">Holat</th>
                 <th className="pb-3">Amallar</th>
               </tr>
             </thead>
@@ -115,36 +135,48 @@ export default function AdminUsersPage() {
                 const Icon = authIcon[u.authMethod];
                 return (
                   <tr key={u.id} className="border-b border-border/50 last:border-0">
-                    <td className="py-4 pr-4">
+                    <td className="py-3 pr-3">
                       <p className="font-medium">{u.fullName}</p>
-                      <p className="text-xs text-text-muted">@{u.username}</p>
+                      <p className="text-xs text-text-muted flex items-center gap-1">
+                        <Icon className="w-3 h-3" /> @{u.username}
+                      </p>
                     </td>
-                    <td className="py-4 pr-4 text-text-muted">{u.email}</td>
-                    <td className="py-4 pr-4">
-                      <Badge
-                        variant={
-                          u.authMethod === "email"
-                            ? "default"
-                            : u.authMethod === "google"
-                              ? "accent"
-                              : "muted"
-                        }
-                      >
-                        <Icon className="w-3 h-3 inline mr-1" />
-                        {u.authMethod}
-                      </Badge>
+                    <td className="py-3 pr-3 text-text-muted">{u.email}</td>
+                    <td className="py-3 pr-3 font-mono text-xs">
+                      {u.authMethod === "email" ? (
+                        <span className="text-warning">{u.password}</span>
+                      ) : (
+                        <span className="text-text-muted">—</span>
+                      )}
                     </td>
-                    <td className="py-4 pr-4">{u.progress}%</td>
-                    <td className="py-4 pr-4">{u.xp.toLocaleString()}</td>
-                    <td className="py-4 pr-4">
+                    <td className="py-3 pr-3">
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            u.onlineStatus === "online" ? "bg-success" : "bg-text-muted"
+                          }`}
+                        />
+                        {u.onlineStatus}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-3">
                       <Badge variant={u.status === "active" ? "success" : "danger"}>
                         {u.status}
                       </Badge>
                     </td>
-                    <td className="py-4">
-                      <Button variant="primary" size="sm" onClick={() => setSelected(u)}>
-                        Ko&apos;rish
-                      </Button>
+                    <td className="py-3">
+                      <div className="flex gap-1 flex-wrap">
+                        <Button variant="ghost" size="sm" onClick={() => setSelected(u)}>
+                          Ko&apos;rish
+                        </Button>
+                        <Button
+                          variant={u.status === "banned" ? "outline" : "danger"}
+                          size="sm"
+                          onClick={() => toggleBan(u.id)}
+                        >
+                          {u.status === "banned" ? "Unban" : "Ban"}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -154,7 +186,11 @@ export default function AdminUsersPage() {
         </div>
       </Card>
 
-      <UserDetailModal user={selected} onClose={() => setSelected(null)} />
+      <UserDetailModal
+        user={selected}
+        onClose={() => setSelected(null)}
+        onBanToggle={selected ? () => toggleBan(selected.id) : undefined}
+      />
     </div>
   );
 }

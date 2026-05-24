@@ -89,12 +89,64 @@ export function getAllLessons() {
           ...lesson,
           subjectId: subject.id,
           subjectName: subject.name,
+          sectionId: section.id,
           sectionName: section.name,
+          subSectionId: sub.id,
           subSectionName: sub.name,
         }))
       )
     )
   );
+}
+
+/** Har bir fan uchun userning hozir o'rganib yetib kelgan (in_progress yoki birinchi available) darsini qaytaradi */
+export function getCurrentLessonPerSubject() {
+  return curricula.map((subject) => {
+    for (const section of subject.sections) {
+      for (const sub of section.subSections) {
+        const inProgress = sub.lessons.find((l) => l.status === "in_progress");
+        if (inProgress) {
+          return {
+            subjectId: subject.id,
+            subjectName: subject.name,
+            subjectIcon: subject.id === "mathematics" ? "\u2211" : subject.id === "physics" ? "\u269B" : "\u2697",
+            lessonId: inProgress.id,
+            lessonTitle: inProgress.title,
+            sectionName: section.name,
+            subSectionName: sub.name,
+          };
+        }
+      }
+    }
+    // Agar in_progress topilmasa, birinchi available darsni qaytaradi
+    for (const section of subject.sections) {
+      for (const sub of section.subSections) {
+        const available = sub.lessons.find((l) => l.status === "available");
+        if (available) {
+          return {
+            subjectId: subject.id,
+            subjectName: subject.name,
+            subjectIcon: subject.id === "mathematics" ? "\u2211" : subject.id === "physics" ? "\u269B" : "\u2697",
+            lessonId: available.id,
+            lessonTitle: available.title,
+            sectionName: section.name,
+            subSectionName: sub.name,
+          };
+        }
+      }
+    }
+    // Hech narsa topilmasa — barcha darslar completed yoki locked
+    const firstLesson = subject.sections[0]?.subSections[0]?.lessons[0];
+    return {
+      subjectId: subject.id,
+      subjectName: subject.name,
+      subjectIcon: subject.id === "mathematics" ? "\u2211" : subject.id === "physics" ? "\u269B" : "\u2697",
+      lessonId: firstLesson?.id ?? "",
+      lessonTitle: firstLesson?.title ?? "—",
+      sectionName: subject.sections[0]?.name ?? "",
+      subSectionName: subject.sections[0]?.subSections[0]?.name ?? "",
+    };
+  });
 }
 
 export type {
