@@ -1,31 +1,69 @@
 "use client";
 
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Textarea } from "@/components/ui/Input";
-import { defaultAIConfig } from "@/lib/data/admin-ai-config";
-import { Bot, Eye, EyeOff, Key, Save } from "lucide-react";
-import { useState } from "react";
+import { useAIConfig } from "@/contexts/AIConfigProvider";
+import { AlertTriangle, Bot, CheckCircle, Eye, EyeOff, Key, Save } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export default function AdminAISettingsPage() {
-  const [apiKey, setApiKey] = useState(defaultAIConfig.apiKey);
-  const [model, setModel] = useState(defaultAIConfig.model);
-  const [context, setContext] = useState(defaultAIConfig.platformContext);
+  const { config, updateConfig, isConfigured } = useAIConfig();
+  const [apiKey, setApiKey] = useState(config.apiKey);
+  const [model, setModel] = useState(config.model);
+  const [context, setContext] = useState(config.platformContext);
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // config o'zgarganda sync
+  useEffect(() => {
+    setApiKey(config.apiKey);
+    setModel(config.model);
+    setContext(config.platformContext);
+  }, [config.apiKey, config.model, config.platformContext]);
+
   const handleSave = () => {
+    updateConfig({
+      apiKey: apiKey.trim(),
+      model: model.trim() || "gpt-4o-mini",
+      platformContext: context,
+    });
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
 
   return (
     <div className="max-w-3xl">
-      <PageHeader
+            <PageHeader
         title="AI Settings"
         description="OpenAI API kaliti va platforma context — AI userlarga platforma bo'yicha javob beradi"
       />
+
+      <Card className="mb-6">
+        <div className="flex items-center gap-3">
+          {isConfigured ? (
+            <>
+              <CheckCircle className="w-5 h-5 text-success" />
+              <div>
+                <p className="text-sm font-medium text-success">AI sozlangan va tayyor</p>
+                <p className="text-xs text-text-muted">Model: {config.model} | Foydalanuvchilar AI Assistant dan foydalana oladi</p>
+              </div>
+              <Badge variant="success" className="ml-auto">Active</Badge>
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="w-5 h-5 text-warning" />
+              <div>
+                <p className="text-sm font-medium text-warning">AI sozlanmagan</p>
+                <p className="text-xs text-text-muted">Haqiqiy OpenAI API kalitni kiriting — foydalanuvchilar AI Assistant ishlatishi uchun</p>
+              </div>
+              <Badge variant="warning" className="ml-auto">Inactive</Badge>
+            </>
+          )}
+        </div>
+      </Card>
 
       <Card className="mb-6">
         <h3 className="font-semibold flex items-center gap-2 mb-4">
@@ -80,9 +118,9 @@ export default function AdminAISettingsPage() {
         {saved ? "Saqlandi!" : "Sozlamalarni saqlash"}
       </Button>
 
-      <p className="text-xs text-text-muted mt-4">
-        Oxirgi yangilanish: {defaultAIConfig.updatedAt}. Productionda API kalitini server
-        environment variable orqali saqlang.
+            <p className="text-xs text-text-muted mt-4">
+        Oxirgi yangilanish: {config.updatedAt}. API kalit localStorage da saqlanadi.
+        Productionda API kalitini server environment variable orqali saqlang.
       </p>
     </div>
   );
