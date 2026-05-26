@@ -4,28 +4,56 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Select } from "@/components/ui/Input";
+import { useAuth } from "@/contexts/AuthProvider";
 import { useTheme } from "@/contexts/ThemeProvider";
-import { Bell, Globe, Moon, Shield, Sun, User } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { Bell, CheckCircle, Globe, Moon, Shield, Sun, User } from "lucide-react";
+import { useState } from "react";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const { profile, user, refreshProfile } = useAuth();
+  const [fullName, setFullName] = useState(profile?.full_name ?? "");
+  const [username, setUsername] = useState(profile?.username ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const saveProfile = async () => {
+    if (!user) return;
+    setSaving(true);
+    const supabase = createClient();
+    await supabase
+      .from("profiles")
+      .update({ full_name: fullName, username })
+      .eq("id", user.id);
+    await refreshProfile();
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
 
   return (
     <div className="max-w-3xl mx-auto">
-      <PageHeader title="Settings" description="Customize your TriCore experience" />
+      <PageHeader title="Settings" description="Profilingizni sozlang" />
 
       <Card className="mb-6">
         <h3 className="font-semibold flex items-center gap-2 mb-4">
           <User className="w-4 h-4 text-primary" />
           Profile
         </h3>
+        {saved && (
+          <div className="mb-4 p-3 rounded-xl bg-success/10 border border-success/25 text-sm text-success flex items-center gap-2">
+            <CheckCircle className="w-4 h-4" /> Saqlandi!
+          </div>
+        )}
         <div className="grid sm:grid-cols-2 gap-4">
-          <Input label="Full Name" defaultValue="John Doe" />
-          <Input label="Username" defaultValue="johndoe" />
-          <Input label="Email" type="email" defaultValue="john@example.com" />
-          <Input label="Bio" placeholder="STEM enthusiast..." />
+          <Input label="Full Name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          <Input label="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+          <Input label="Email" type="email" value={profile?.email ?? ""} disabled />
         </div>
-        <Button variant="primary" className="mt-4">Save Profile</Button>
+        <Button variant="primary" className="mt-4" onClick={saveProfile} loading={saving}>
+          Saqlash
+        </Button>
       </Card>
 
       <Card className="mb-6">

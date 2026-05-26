@@ -1,9 +1,10 @@
 "use client";
 
-import { userStats } from "@/lib/data/mock";
+import { useAuth } from "@/contexts/AuthProvider";
 import { cn } from "@/lib/utils";
-import { Bell, Flame, Menu, Search, Zap } from "lucide-react";
+import { Bell, Flame, LogOut, Menu, Search, Zap } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -11,6 +12,23 @@ interface HeaderProps {
 }
 
 export function Header({ onMenuClick, title }: HeaderProps) {
+  const { profile, signOut } = useAuth();
+  const router = useRouter();
+
+  const initials = profile?.full_name
+    ? profile.full_name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "?";
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push("/login");
+  };
+
   return (
     <header className="sticky top-0 z-30 flex items-center gap-4 px-4 sm:px-6 py-3 border-b border-border glass">
       <button
@@ -37,16 +55,18 @@ export function Header({ onMenuClick, title }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4 ml-auto">
-        <div className="hidden sm:flex items-center gap-3 text-sm">
-          <span className="flex items-center gap-1 text-warning">
-            <Flame className="w-4 h-4" />
-            {userStats.dailyStreak}
-          </span>
-          <span className="flex items-center gap-1 text-primary">
-            <Zap className="w-4 h-4" />
-            {userStats.xp.toLocaleString()} XP
-          </span>
-        </div>
+        {profile && (
+          <div className="hidden sm:flex items-center gap-3 text-sm">
+            <span className="flex items-center gap-1 text-warning">
+              <Flame className="w-4 h-4" />
+              {profile.streak}
+            </span>
+            <span className="flex items-center gap-1 text-primary">
+              <Zap className="w-4 h-4" />
+              {profile.xp.toLocaleString()} XP
+            </span>
+          </div>
+        )}
 
         <button
           type="button"
@@ -54,6 +74,15 @@ export function Header({ onMenuClick, title }: HeaderProps) {
         >
           <Bell className="w-5 h-5" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full" />
+        </button>
+
+        <button
+          type="button"
+          onClick={handleSignOut}
+          title="Chiqish"
+          className="p-2 rounded-xl hover:bg-surface-elevated text-text-muted"
+        >
+          <LogOut className="w-5 h-5" />
         </button>
 
         <Link href="/settings" className="flex items-center gap-2 group">
@@ -64,7 +93,7 @@ export function Header({ onMenuClick, title }: HeaderProps) {
               "ring-2 ring-transparent group-hover:ring-primary/40 transition-all"
             )}
           >
-            JD
+            {initials}
           </div>
         </Link>
       </div>

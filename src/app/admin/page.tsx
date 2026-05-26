@@ -2,15 +2,11 @@
 
 import { Card, StatCard } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { getAdminLessonStats } from "@/lib/data/admin-lessons";
-import { adminMessages } from "@/lib/data/admin-messages";
-import { adminUsers } from "@/lib/data/admin-users";
-import { adminStats } from "@/lib/data/mock";
+import { createClient } from "@/lib/supabase/client";
 import { formatNumber } from "@/lib/utils";
 import {
   Activity,
   BookOpen,
-  Bot,
   Database,
   MessageSquare,
   Sliders,
@@ -18,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 const links = [
   { href: "/admin/content", label: "Content", desc: "Darslar tahriri", icon: BookOpen },
@@ -29,9 +26,27 @@ const links = [
 ];
 
 export default function AdminDashboardPage() {
-  const lessonStats = getAdminLessonStats();
-  const openMessages = adminMessages.filter((m) => m.status === "open").length;
-  const onlineUsers = adminUsers.filter((u) => u.onlineStatus === "online").length;
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [onlineUsers, setOnlineUsers] = useState(0);
+  const [openMessages, setOpenMessages] = useState(0);
+  const [totalQuestions, setTotalQuestions] = useState(0);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const load = async () => {
+      const [users, online, msgs, qs] = await Promise.all([
+        supabase.from("profiles").select("*", { count: "exact", head: true }),
+        supabase.from("profiles").select("*", { count: "exact", head: true }).eq("is_online", true),
+        supabase.from("messages").select("*", { count: "exact", head: true }).eq("status", "open"),
+        supabase.from("exam_questions").select("*", { count: "exact", head: true }),
+      ]);
+      setTotalUsers(users.count ?? 0);
+      setOnlineUsers(online.count ?? 0);
+      setOpenMessages(msgs.count ?? 0);
+      setTotalQuestions(qs.count ?? 0);
+    };
+    load();
+  }, []);
 
   return (
     <div>
@@ -41,9 +56,9 @@ export default function AdminDashboardPage() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total Users" value={formatNumber(adminStats.totalUsers)} icon={Users} color="primary" />
+        <StatCard label="Total Users" value={formatNumber(totalUsers)} icon={Users} color="primary" />
         <StatCard label="Online Now" value={onlineUsers} icon={Activity} color="success" />
-        <StatCard label="Darslar" value={lessonStats.lessons} icon={BookOpen} color="accent" />
+        <StatCard label="Exam savollar" value={totalQuestions} icon={Database} color="accent" />
         <StatCard label="Ochiq xabarlar" value={openMessages} icon={MessageSquare} color="warning" />
       </div>
 
@@ -58,16 +73,6 @@ export default function AdminDashboardPage() {
           </Link>
         ))}
       </div>
-
-      <Card className="mt-8">
-        <p className="text-sm text-text-muted flex items-center gap-2">
-          <Bot className="w-4 h-4 text-accent" />
-          AI so&apos;rovlar (bugun): {formatNumber(adminStats.aiUsage)} — batafsil{" "}
-          <Link href="/admin/analytics" className="text-primary hover:underline">
-            Analytics
-          </Link>
-        </p>
-      </Card>
     </div>
   );
 }

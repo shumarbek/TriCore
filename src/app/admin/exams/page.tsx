@@ -5,21 +5,32 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Select, Textarea } from "@/components/ui/Input";
-import {
-  examQuestions,
-  type ExamQuestion,
-} from "@/lib/data/admin-exam-bank";
+import { useAuth } from "@/contexts/AuthProvider";
+import { createClient } from "@/lib/supabase/client";
 import { curricula, getSections, getSubSections } from "@/lib/data/curriculum";
 import { cn } from "@/lib/utils";
 import { Database, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+interface EQ {
+  id: string;
+  subject_id: string;
+  section_id: string;
+  sub_section_id: string;
+  question: string;
+  options: string[];
+  correct_index: number;
+  explanation: string;
+}
 
 export default function AdminExamsPage() {
+  const { user } = useAuth();
+  const supabase = createClient();
   const [subjectId, setSubjectId] = useState("physics");
   const [sectionId, setSectionId] = useState("");
   const [subSectionId, setSubSectionId] = useState("");
-  const [questions, setQuestions] = useState(examQuestions);
-  const [editing, setEditing] = useState<ExamQuestion | null>(null);
+  const [questions, setQuestions] = useState<EQ[]>([]);
+  const [editing, setEditing] = useState<EQ | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
   const sections = useMemo(() => getSections(subjectId), [subjectId]);
@@ -28,7 +39,19 @@ export default function AdminExamsPage() {
     () => getSubSections(subjectId, effectiveSection),
     [subjectId, effectiveSection]
   );
-  const effectiveSub = subSectionId || subSections[0]?.id || "";
+    const effectiveSub = subSectionId || subSections[0]?.id || "";
+
+  const loadQuestions = useCallback(async () => {
+    const { data } = await supabase
+      .from("exam_questions")
+      .select("*")
+      .eq("subject_id", subjectId)
+      .eq("section_id", effectiveSection)
+      .eq("sub_section_id", effectiveSub);
+    if (data) setQuestions(data as EQ[]);
+  }, [supabase, subjectId, effectiveSection, effectiveSub]);
+
+  useEffect(() => { loadQuestions(); }, [loadQuestions]);
 
   useEffect(() => {
     if (sections.length && !sections.some((s) => s.id === sectionId)) {
@@ -43,16 +66,7 @@ export default function AdminExamsPage() {
     }
   }, [subSections, subSectionId]);
 
-  const filtered = useMemo(
-    () =>
-      questions.filter(
-        (q) =>
-          q.subjectId === subjectId &&
-          q.sectionId === effectiveSection &&
-          q.subSectionId === effectiveSub
-      ),
-    [questions, subjectId, effectiveSection, effectiveSub]
-  );
+    const filtered = questions; // Already filtered from DB
 
   const [form, setForm] = useState({
     question: "",
@@ -61,36 +75,41 @@ export default function AdminExamsPage() {
     explanation: "",
   });
 
-  const saveQuestion = () => {
-    const q: ExamQuestion = {
-      id: editing?.id ?? `eq-${Date.now()}`,
-      subjectId,
-      sectionId: effectiveSection,
-      subSectionId: effectiveSub,
+    const saveQuestion = async () => {
+    const payload = {
+      subject_id: subjectId,
+      section_id: effectiveSection,
+      sub_section_id: effectiveSub,
       question: form.question,
       options: form.options.filter(Boolean),
-      correctIndex: form.correctIndex,
+      correct_index: form.correctIndex,
       explanation: form.explanation,
     };
     if (editing) {
-      setQuestions((prev) => prev.map((x) => (x.id === editing.id ? q : x)));
+      await supabase.from("exam_questions").update(payload).eq("id", editing.id);
     } else {
-      setQuestions((prev) => [...prev, q]);
+      await supabase.from("exam_questions").insert({ ...payload, created_by: user!.id });
     }
     setEditing(null);
     setShowAdd(false);
     setForm({ question: "", options: ["", "", "", ""], correctIndex: 0, explanation: "" });
+    loadQuestions();
   };
 
-  const startEdit = (q: ExamQuestion) => {
+  const startEdit = (q: EQ) => {
     setEditing(q);
     setForm({
       question: q.question,
       options: [...q.options, "", "", ""].slice(0, 4),
-      correctIndex: q.correctIndex,
+      correctIndex: q.correct_index,
       explanation: q.explanation,
     });
     setShowAdd(true);
+  };
+
+  const deleteQuestion = async (id: string) => {
+    await supabase.from("exam_questions").delete().eq("id", id);
+    loadQuestions();
   };
 
   return (
@@ -191,12 +210,12 @@ export default function AdminExamsPage() {
               <div className="flex-1">
                 <p className="font-medium">{q.question}</p>
                 <ul className="mt-2 space-y-1 text-sm text-text-muted">
-                  {q.options.map((o, i) => (
+                                    {q.options.map((o, i) => (
                     <li
-                      key={o}
-                      className={cn(i === q.correctIndex && "text-success font-medium")}
+                      key={`${q.id}-${i}`}
+                      className={cn(i === q.correct_index && "text-success font-medium")}
                     >
-                      {i + 1}. {o} {i === q.correctIndex && "✓"}
+                      {i + 1}. {o} {i === q.correct_index && "✓"}
                     </li>
                   ))}
                 </ul>
@@ -209,7 +228,7 @@ export default function AdminExamsPage() {
                 <Button
                   variant="danger"
                   size="sm"
-                  onClick={() => setQuestions((prev) => prev.filter((x) => x.id !== q.id))}
+                  onClick={() => deleteQuestion(q.id)}
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>

@@ -5,26 +5,21 @@ import { Button } from "@/components/ui/Button";
 import { Card, StatCard } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import {
-  aiRecommendations,
-  badges,
-  recentActivity,
-  userStats,
-} from "@/lib/data/mock";
+import { useAuth } from "@/contexts/AuthProvider";
+import { createClient } from "@/lib/supabase/client";
 import { formatNumber } from "@/lib/utils";
 import {
   Award,
   BookOpen,
-  Brain,
   CheckCircle,
   Clock,
   Flame,
   Medal,
-  Target,
   TrendingUp,
   Zap,
 } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -35,32 +30,104 @@ import {
   YAxis,
 } from "recharts";
 
-const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const chartData = userStats.weeklyHours.map((h, i) => ({
-  day: weekDays[i],
-  hours: h,
-}));
+interface Stats {
+  lessonsCompleted: number;
+  examsPassed: number;
+  rank: number;
+}
+
+const defaultWeekly = [
+  { day: "Dush", minutes: 0 },
+  { day: "Sesh", minutes: 0 },
+  { day: "Chor", minutes: 0 },
+  { day: "Pay", minutes: 0 },
+  { day: "Jum", minutes: 0 },
+  { day: "Shan", minutes: 0 },
+  { day: "Yak", minutes: 0 },
+];
 
 export default function DashboardPage() {
+  const { profile, user } = useAuth();
+  const [stats, setStats] = useState<Stats>({ lessonsCompleted: 0, examsPassed: 0, rank: 0 });
+  const [weekly, setWeekly] = useState(defaultWeekly);
+
+  useEffect(() => {
+    if (!user) return;
+    const supabase = createClient();
+
+    const load = async () => {
+      // Lessons completed
+      const { count: lc } = await supabase
+        .from("lesson_progress")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("status", "completed");
+
+      // Exams passed
+      const { count: ep } = await supabase
+        .from("exam_results")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .gte("score", 60);
+
+      // Rank (XP bo'yicha)
+      const { count: higherXp } = await supabase
+        .from("profiles")
+        .select("*", { count: "exact", head: true })
+        .gt("xp", profile?.xp ?? 0);
+
+      setStats({
+        lessonsCompleted: lc ?? 0,
+        examsPassed: ep ?? 0,
+        rank: (higherXp ?? 0) + 1,
+      });
+
+      // Weekly activity
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const { data: actData } = await supabase
+        .from("daily_activity")
+        .select("date, time_spent_minutes")
+        .eq("user_id", user.id)
+        .gte("date", weekAgo.toISOString().slice(0, 10))
+        .order("date");
+
+      if (actData && actData.length > 0) {
+        const days = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
+        setWeekly(
+          actData.map((d) => ({
+            day: days[new Date(d.date).getDay()] || d.date,
+            minutes: d.time_spent_minutes,
+          }))
+        );
+      }
+    };
+    load();
+  }, [user, profile?.xp]);
+
+  const xpForNextLevel = (profile?.level ?? 1) * 1000;
+  const xpInLevel = (profile?.xp ?? 0) % 1000;
+  const levelProgress = Math.round((xpInLevel / xpForNextLevel) * 100);
+
   return (
     <div>
       <PageHeader
         title="Dashboard"
-        description="Your scientific learning command center"
+        description={`Xush kelibsiz, ${profile?.full_name || "User"}!`}
         action={
           <Link href="/learning">
-            <Button variant="primary">Continue Learning</Button>
+            <Button variant="primary">Davom etish</Button>
           </Link>
         }
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
-        <StatCard label="Overall Progress" value={`${userStats.overallProgress}%`} icon={TrendingUp} color="primary" delay={0} />
-        <StatCard label="Daily Streak" value={`${userStats.dailyStreak} days`} icon={Flame} color="warning" trend="+2 this week" delay={0.05} />
-        <StatCard label="Lessons Done" value={userStats.completedLessons} icon={BookOpen} color="accent" delay={0.1} />
-        <StatCard label="Exams Passed" value={userStats.examsPassed} icon={CheckCircle} color="success" delay={0.15} />
-        <StatCard label="XP Points" value={formatNumber(userStats.xp)} icon={Zap} color="secondary" delay={0.2} />
-        <StatCard label="Global Rank" value={`#${formatNumber(userStats.rank)}`} icon={Medal} color="primary" delay={0.25} />
+        <StatCard label="XP" value={formatNumber(profile?.xp ?? 0)} icon={Zap} color="secondary" delay={0} />
+        <StatCard label="Streak" value={`${profile?.streak ?? 0} kun`} icon={Flame} color="warning" delay={0.05} />
+        <StatCard label="Darslar" value={stats.lessonsCompleted} icon={BookOpen} color="accent" delay={0.1} />
+        <StatCard label="Imtihonlar" value={stats.examsPassed} icon={CheckCircle} color="success" delay={0.15} />
+        <StatCard label="Level" value={profile?.level ?? 1} icon={TrendingUp} color="primary" delay={0.2} />
+        <StatCard label="Reyting" value={`#${formatNumber(stats.rank)}`} icon={Medal} color="primary" delay={0.25} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6 mb-8">
@@ -68,13 +135,15 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold flex items-center gap-2">
               <Clock className="w-4 h-4 text-primary" />
-              Weekly Study Analytics
+              Haftalik faollik
             </h3>
-            <Badge variant="accent">23.5 hrs this week</Badge>
+            <Badge variant="accent">
+              {weekly.reduce((s, d) => s + d.minutes, 0)} daqiqa
+            </Badge>
           </div>
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
+              <AreaChart data={weekly}>
                 <defs>
                   <linearGradient id="hoursGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.4} />
@@ -91,7 +160,7 @@ export default function DashboardPage() {
                     borderRadius: "12px",
                   }}
                 />
-                <Area type="monotone" dataKey="hours" stroke="var(--primary)" fill="url(#hoursGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="minutes" stroke="var(--primary)" fill="url(#hoursGrad)" strokeWidth={2} name="Daqiqa" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -100,79 +169,51 @@ export default function DashboardPage() {
         <Card delay={0.35}>
           <h3 className="font-semibold flex items-center gap-2 mb-4">
             <Award className="w-4 h-4 text-warning" />
-            Level {userStats.level}
+            Level {profile?.level ?? 1}
           </h3>
-          <ProgressBar value={68} className="mb-2" />
-          <p className="text-xs text-text-muted mb-4">2,580 XP to Level 13</p>
-          <div className="flex flex-wrap gap-2">
-            {badges.map((b) => (
-              <span
-                key={b.name}
-                title={b.name}
-                className={`text-lg p-2 rounded-xl border ${
-                  b.earned
-                    ? "bg-primary/10 border-primary/20"
-                    : "opacity-40 grayscale border-border"
-                }`}
-              >
-                {b.icon}
-              </span>
-            ))}
+          <ProgressBar value={levelProgress} className="mb-2" />
+          <p className="text-xs text-text-muted mb-4">
+            {1000 - xpInLevel} XP keyingi levelga
+          </p>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between p-2 rounded-lg bg-surface-elevated/50">
+              <span className="text-text-muted">Total XP</span>
+              <span className="font-bold">{(profile?.xp ?? 0).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between p-2 rounded-lg bg-surface-elevated/50">
+              <span className="text-text-muted">Streak</span>
+              <span className="font-bold">{profile?.streak ?? 0} kun</span>
+            </div>
+            <div className="flex justify-between p-2 rounded-lg bg-surface-elevated/50">
+              <span className="text-text-muted">Reyting</span>
+              <span className="font-bold">#{stats.rank}</span>
+            </div>
           </div>
         </Card>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <Card delay={0.4}>
-          <h3 className="font-semibold mb-4">Recent Activity</h3>
-          <ul className="space-y-3">
-            {recentActivity.map((a) => (
-              <li key={a.title} className="flex items-start gap-3 p-3 rounded-xl bg-surface-elevated/50">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  {a.type === "lesson" && <BookOpen className="w-4 h-4 text-primary" />}
-                  {a.type === "exam" && <Target className="w-4 h-4 text-accent" />}
-                  {a.type === "homework" && <CheckCircle className="w-4 h-4 text-success" />}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{a.title}</p>
-                  <p className="text-xs text-text-muted">{a.subject} · {a.time}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
-
-        <Card className="lg:col-span-2" delay={0.45}>
-          <h3 className="font-semibold flex items-center gap-2 mb-4">
-            <Brain className="w-4 h-4 text-accent" />
-            AI Recommendations
-          </h3>
-          <div className="space-y-3">
-            {aiRecommendations.map((r) => (
-              <div
-                key={r.title}
-                className="flex items-center justify-between p-4 rounded-xl border border-border hover:border-primary/30 transition-colors"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        r.type === "next" ? "default" : r.type === "weak" ? "warning" : "accent"
-                      }
-                    >
-                      {r.type === "next" ? "Next" : r.type === "weak" ? "Weak Topic" : "Revision"}
-                    </Badge>
-                    <span className="text-sm font-medium">{r.title}</span>
-                  </div>
-                  <p className="text-xs text-text-muted mt-1">{r.subject} — {r.reason}</p>
-                </div>
-                <Link href="/lessons/math-geo-plan-6">
-                  <Button variant="ghost" size="sm">Start</Button>
-                </Link>
-              </div>
-            ))}
-          </div>
-        </Card>
+      <div className="grid md:grid-cols-3 gap-4">
+        <Link href="/learning">
+          <Card hover>
+            <BookOpen className="w-8 h-8 text-primary mb-2" />
+            <p className="font-semibold">O&apos;rganishni davom ettirish</p>
+            <p className="text-xs text-text-muted mt-1">Roadmap bo&apos;yicha keyingi dars</p>
+          </Card>
+        </Link>
+        <Link href="/practice-exams">
+          <Card hover>
+            <CheckCircle className="w-8 h-8 text-accent mb-2" />
+            <p className="font-semibold">Practice Exam</p>
+            <p className="text-xs text-text-muted mt-1">Bilimingizni sinab ko&apos;ring</p>
+          </Card>
+        </Link>
+        <Link href="/ai-assistant">
+          <Card hover>
+            <Zap className="w-8 h-8 text-secondary mb-2" />
+            <p className="font-semibold">AI Assistant</p>
+            <p className="text-xs text-text-muted mt-1">Savollar bering, tushuntirishlar oling</p>
+          </Card>
+        </Link>
       </div>
     </div>
   );

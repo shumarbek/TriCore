@@ -1,9 +1,10 @@
 "use client";
 
 import { Button } from "@/components/ui/Button";
+import { useAuth } from "@/contexts/AuthProvider";
+import { motion } from "framer-motion";
 import { Atom } from "lucide-react";
 import Link from "next/link";
-import { motion } from "framer-motion";
 
 export function AuthCard({
   title,
@@ -47,12 +48,23 @@ export function AuthDivider() {
 }
 
 export function SocialButtons() {
+  const { signInWithProvider } = useAuth();
   return (
     <div className="grid grid-cols-2 gap-3">
-      <Button variant="outline" size="md" className="w-full">
+      <Button
+        variant="outline"
+        size="md"
+        className="w-full"
+        onClick={() => signInWithProvider("google")}
+      >
         Google
       </Button>
-      <Button variant="outline" size="md" className="w-full">
+      <Button
+        variant="outline"
+        size="md"
+        className="w-full"
+        onClick={() => signInWithProvider("github")}
+      >
         GitHub
       </Button>
     </div>

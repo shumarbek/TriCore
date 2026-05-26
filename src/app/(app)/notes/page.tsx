@@ -4,21 +4,88 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Textarea } from "@/components/ui/Input";
-import { userNotes } from "@/lib/data/notes";
-import { Plus, Search, StickyNote } from "lucide-react";
+import { useAuth } from "@/contexts/AuthProvider";
+import { createClient } from "@/lib/supabase/client";
+import { Plus, Search, StickyNote, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+interface Note {
+  id: string;
+  title: string;
+  content: string;
+  subject: string | null;
+  lesson_id: string | null;
+  updated_at: string;
+}
 
 export default function NotesPage() {
-  const [selected, setSelected] = useState(userNotes[0]?.id ?? "");
+  const { user } = useAuth();
+  const supabase = createClient();
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [selected, setSelected] = useState("");
   const [search, setSearch] = useState("");
-  const current = userNotes.find((n) => n.id === selected);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const filtered = userNotes.filter(
+  const loadNotes = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("notes")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false });
+    if (data) {
+      setNotes(data as Note[]);
+      if (!selected && data.length > 0) setSelected(data[0].id);
+    }
+  }, [supabase, user, selected]);
+
+  useEffect(() => { loadNotes(); }, [loadNotes]);
+
+  const current = notes.find((n) => n.id === selected);
+
+  const filtered = notes.filter(
     (n) =>
       n.title.toLowerCase().includes(search.toLowerCase()) ||
-      n.subject.toLowerCase().includes(search.toLowerCase())
+      (n.subject ?? "").toLowerCase().includes(search.toLowerCase())
   );
+
+  const createNote = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("notes")
+      .insert({ user_id: user.id, title: "Yangi qayd", content: "" })
+      .select()
+      .single();
+    if (data) {
+      setNotes((prev) => [data as Note, ...prev]);
+      setSelected(data.id);
+    }
+  };
+
+  const updateNote = useCallback(
+    (field: "title" | "content", value: string) => {
+      if (!current) return;
+      setNotes((prev) =>
+        prev.map((n) => (n.id === current.id ? { ...n, [field]: value } : n))
+      );
+      // Debounced save
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(async () => {
+        await supabase
+          .from("notes")
+          .update({ [field]: value, updated_at: new Date().toISOString() })
+          .eq("id", current.id);
+      }, 800);
+    },
+    [current, supabase]
+  );
+
+  const deleteNote = async (id: string) => {
+    await supabase.from("notes").delete().eq("id", id);
+    setNotes((prev) => prev.filter((n) => n.id !== id));
+    if (selected === id) setSelected(notes.find((n) => n.id !== id)?.id ?? "");
+  };
 
   return (
     <div className="h-[calc(100vh-8rem)]">
@@ -26,8 +93,8 @@ export default function NotesPage() {
         title="Notes"
         description="Rich text notes with formula support, auto-save, and search"
         action={
-          <Button variant="primary" size="md">
-            <Plus className="w-4 h-4" /> New Note
+          <Button variant="primary" size="md" onClick={createNote}>
+            <Plus className="w-4 h-4" /> Yangi qayd
           </Button>
         }
       />
@@ -61,7 +128,7 @@ export default function NotesPage() {
                     {note.title}
                   </p>
                   <p className="text-xs text-text-muted">
-                    {note.subject} · {note.updated}
+                    {note.subject ?? ""} \u00b7 {new Date(note.updated_at).toLocaleDateString()}
                   </p>
                 </button>
               </li>
@@ -74,28 +141,35 @@ export default function NotesPage() {
             <>
               <div className="flex items-center justify-between mb-4 pb-4 border-b border-border flex-wrap gap-2">
                 <div>
-                  <h3 className="font-semibold">{current.title}</h3>
+                  <input
+                    className="font-semibold bg-transparent border-none focus:outline-none text-text w-full"
+                    value={current.title}
+                    onChange={(e) => updateNote("title", e.target.value)}
+                  />
                   <p className="text-xs text-text-muted">
-                    {current.subject} · Auto-saved · {current.updated}
+                    Avtomatik saqlanadi \u00b7 {new Date(current.updated_at).toLocaleString()}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {current.lessonId && (
-                    <Link href={`/lessons/${current.lessonId}`}>
+                  {current.lesson_id && (
+                    <Link href={`/lessons/${current.lesson_id}`}>
                       <Button variant="ghost" size="sm">
                         Bog&apos;langan dars
                       </Button>
                     </Link>
                   )}
-                  <span className="text-xs text-success">Saved</span>
+                  <Button variant="danger" size="sm" onClick={() => deleteNote(current.id)}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
               </div>
               <Textarea
                 className="flex-1 min-h-[280px] font-mono text-sm"
-                defaultValue={current.content}
+                value={current.content}
+                onChange={(e) => updateNote("content", e.target.value)}
               />
               <p className="text-xs text-text-muted mt-2">
-                Supports LaTeX formulas · Markdown · Auto-save enabled
+                Markdown \u00b7 Auto-save enabled
               </p>
             </>
           ) : (

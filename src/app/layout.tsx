@@ -1,4 +1,5 @@
 import { AIConfigProvider } from "@/contexts/AIConfigProvider";
+import { AuthProvider } from "@/contexts/AuthProvider";
 import { ThemeProvider } from "@/contexts/ThemeProvider";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -31,7 +32,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
       >
         <ThemeProvider>
-          <AIConfigProvider>{children}</AIConfigProvider>
+          <AuthProvider>
+            <AIConfigProvider>{children}</AIConfigProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

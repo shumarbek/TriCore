@@ -6,11 +6,14 @@ import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Textarea } from "@/components/ui/Input";
 import { useAIConfig } from "@/contexts/AIConfigProvider";
+import { useAuth } from "@/contexts/AuthProvider";
+import { createClient } from "@/lib/supabase/client";
 import { AlertTriangle, Bot, CheckCircle, Eye, EyeOff, Key, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export default function AdminAISettingsPage() {
   const { config, updateConfig, isConfigured } = useAIConfig();
+  const { user } = useAuth();
   const [apiKey, setApiKey] = useState(config.apiKey);
   const [model, setModel] = useState(config.model);
   const [context, setContext] = useState(config.platformContext);
@@ -24,12 +27,56 @@ export default function AdminAISettingsPage() {
     setContext(config.platformContext);
   }, [config.apiKey, config.model, config.platformContext]);
 
-  const handleSave = () => {
+  // Supabase dan config olish
+  useEffect(() => {
+    const load = async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("ai_config")
+        .select("*")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .single();
+      if (data) {
+        setApiKey(data.api_key);
+        setModel(data.model);
+        setContext(data.platform_context);
+      }
+    };
+    load();
+  }, []);
+
+  const handleSave = async () => {
+    // localStorage ga saqlash (fallback)
     updateConfig({
       apiKey: apiKey.trim(),
       model: model.trim() || "gpt-4o-mini",
       platformContext: context,
     });
+
+    // Supabase ga saqlash
+    if (user) {
+      const supabase = createClient();
+      const payload = {
+        api_key: apiKey.trim(),
+        model: model.trim() || "gpt-4o-mini",
+        platform_context: context,
+        updated_by: user.id,
+        updated_at: new Date().toISOString(),
+      };
+      // Upsert: birinchi qator mavjud bo'lsa yangilash, aks holda yaratish
+      const { data: existing } = await supabase
+        .from("ai_config")
+        .select("id")
+        .limit(1)
+        .single();
+      if (existing) {
+        await supabase.from("ai_config").update(payload).eq("id", existing.id);
+      } else {
+        await supabase.from("ai_config").insert(payload);
+      }
+    }
+
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };

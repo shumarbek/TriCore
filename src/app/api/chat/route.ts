@@ -1,3 +1,4 @@
+import { createServerClient } from "@supabase/ssr";
 import { NextRequest } from "next/server";
 
 export const runtime = "edge";
@@ -5,19 +6,37 @@ export const runtime = "edge";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
-      messages,
-      apiKey,
-      model = "gpt-4o-mini",
-      systemPrompt = "",
-    } = body as {
+    const { messages } = body as {
       messages: { role: string; content: string }[];
-      apiKey: string;
-      model?: string;
-      systemPrompt?: string;
     };
 
-    if (!apiKey || apiKey.includes("••") || apiKey.startsWith("sk-demo")) {
+    // Supabase dan AI config olish
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return [...req.cookies.getAll()];
+          },
+          setAll() {},
+        },
+      }
+    );
+
+    const { data: config } = await supabase
+      .from("ai_config")
+      .select("*")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    // Fallback: client dan kelgan yoki localStorage dagi config
+    const apiKey = config?.api_key || (body as { apiKey?: string }).apiKey || "";
+    const model = config?.model || (body as { model?: string }).model || "gpt-4o-mini";
+    const systemPrompt = config?.platform_context || (body as { systemPrompt?: string }).systemPrompt || "";
+
+    if (!apiKey || apiKey.includes("\u2022\u2022") || apiKey.startsWith("sk-demo")) {
       return new Response(
         JSON.stringify({
           error:
