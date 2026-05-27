@@ -8,7 +8,7 @@ import { getAllLessons } from "@/lib/data/curriculum";
 import { cn } from "@/lib/utils";
 import { BookOpen, Lock, Play } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const statusBadge = {
   completed: "success" as const,
@@ -26,7 +26,16 @@ const statusLabel = {
 
 export default function LessonsPage() {
   const [filter, setFilter] = useState<string>("all");
-  const allLessons = useMemo(() => getAllLessons(), []);
+  const [adminLessons, setAdminLessons] = useState<Array<ReturnType<typeof getAllLessons>[0]>>([]);
+  const allLessons = useMemo(() => [...getAllLessons(), ...adminLessons], [adminLessons]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("tricore-admin-lessons");
+    if (!saved) return;
+    const items = JSON.parse(saved) as Array<ReturnType<typeof getAllLessons>[0]>;
+    const known = new Set(getAllLessons().map((l) => l.id));
+    setAdminLessons(items.filter((l) => !known.has(l.id)).map((l) => ({ ...l, status: "available" as const })));
+  }, []);
 
   const filtered =
     filter === "all"

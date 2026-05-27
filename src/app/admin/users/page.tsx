@@ -53,7 +53,7 @@ export default function AdminUsersPage() {
     const user = users.find((u) => u.id === id);
     if (!user) return;
     const newStatus = user.status === "banned" ? "active" : "banned";
-    await supabase.from("profiles").update({ status: newStatus }).eq("id", id);
+    await supabase.from("profiles").update({ status: newStatus } as never).eq("id", id);
     load();
   };
 

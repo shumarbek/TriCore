@@ -44,7 +44,7 @@ export function Sidebar({
   const content = (
     <aside
       className={cn(
-        "flex flex-col h-full border-r border-border bg-[var(--sidebar)] transition-all duration-300",
+        "flex flex-col h-screen border-r border-border bg-[var(--sidebar)] transition-all duration-300",
         collapsed ? "w-[72px]" : "w-64"
       )}
     >
@@ -69,7 +69,7 @@ export function Sidebar({
         </button>
       </div>
 
-            <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-0.5">
+            <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-2 space-y-0.5">
         {items.map((item) => {
           const isLessonsItem = !admin && item.href === "/lessons";
           const active =
@@ -260,7 +260,7 @@ export function Sidebar({
 
   return (
     <>
-      <div className="hidden lg:block flex-shrink-0">{content}</div>
+      <div className="hidden lg:block flex-shrink-0 sticky top-0 h-screen">{content}</div>
       <AnimatePresence>
         {mobileOpen && (
           <>

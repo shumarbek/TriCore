@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/Input";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Mail, Send } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface Msg {
   id: string;
@@ -26,7 +26,7 @@ export default function AdminMessagesPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [reply, setReply] = useState("");
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -34,8 +34,9 @@ export default function AdminMessagesPage() {
       .select("*, profiles(full_name, email)")
       .order("created_at", { ascending: false });
     if (data) {
-      setMessages(data as unknown as Msg[]);
-      if (!selectedId && data.length > 0) setSelectedId(data[0].id);
+      const rows = data as unknown as Msg[];
+      setMessages(rows);
+      if (!selectedId && rows.length > 0) setSelectedId(rows[0].id);
     }
   }, [supabase, selectedId]);
 
@@ -59,7 +60,7 @@ export default function AdminMessagesPage() {
         status: "replied",
         admin_reply: reply,
         replied_at: new Date().toISOString(),
-      })
+      } as never)
       .eq("id", selected.id);
     setReply("");
     load();

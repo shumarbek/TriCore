@@ -14,7 +14,9 @@ import {
 import { curricula, getSections, getSubSections } from "@/lib/data/curriculum";
 import { cn } from "@/lib/utils";
 import { BookOpen, Layers, Pencil, Plus, Search, Video } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+const ADMIN_LESSONS_KEY = "tricore-admin-lessons";
 
 export default function AdminContentPage() {
   const stats = getAdminLessonStats();
@@ -37,6 +39,15 @@ export default function AdminContentPage() {
     homeworkPdf: "",
     homeworkDeadline: "",
   });
+
+  useEffect(() => {
+    const saved = localStorage.getItem(ADMIN_LESSONS_KEY);
+    if (saved) setLessons(JSON.parse(saved) as LessonAdminData[]);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(ADMIN_LESSONS_KEY, JSON.stringify(lessons));
+  }, [lessons]);
 
   const sections = useMemo(
     () => getSections(newLesson.subjectId),

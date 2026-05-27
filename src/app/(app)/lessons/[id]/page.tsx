@@ -5,7 +5,12 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Input";
 import { useAuth } from "@/contexts/AuthProvider";
-import { getAdjacentLessons, getLessonById } from "@/lib/data/curriculum";
+import type { LessonAdminData } from "@/lib/data/admin-lessons";
+import {
+  getAdjacentLessonsInGroup,
+  getLessonById,
+  getLessonGroup,
+} from "@/lib/data/curriculum";
 import { getLessonHandbook } from "@/lib/data/handbook";
 import { XP_REWARDS, addXp, incrementDailyActivity } from "@/lib/learning/gamification";
 import { createClient } from "@/lib/supabase/client";
@@ -24,7 +29,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const formulas = [
   { name: "Asosiy formula", expr: "F = ma" },
@@ -44,9 +49,39 @@ export default function LessonDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user, refreshProfile } = useAuth();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const lessonId = params.id as string;
-  const meta = getLessonById(lessonId);
+  const baseMeta = getLessonById(lessonId);
+  const adminOverride =
+    typeof window === "undefined"
+      ? null
+      : ((JSON.parse(localStorage.getItem("tricore-admin-lessons") ?? "[]") as LessonAdminData[]).find(
+          (l) => l.id === lessonId
+        ) ?? null);
+  const meta = baseMeta
+    ? {
+        ...baseMeta,
+        lesson: {
+          ...baseMeta.lesson,
+          title: adminOverride?.title ?? baseMeta.lesson.title,
+        },
+      }
+    : adminOverride
+      ? {
+          lesson: {
+            id: adminOverride.id,
+            title: adminOverride.title,
+            order: adminOverride.order,
+            status: "available" as const,
+          },
+          subjectId: adminOverride.subjectId,
+          subjectName: adminOverride.subjectName,
+          sectionId: adminOverride.sectionId,
+          sectionName: adminOverride.sectionName,
+          subSectionId: adminOverride.subSectionId,
+          subSectionName: adminOverride.subSectionName,
+        }
+      : null;
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Ma'lumotnoma");
   const [playing, setPlaying] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -69,7 +104,7 @@ export default function LessonDetailPage() {
   }
 
   const { lesson, subjectName, sectionName, subSectionName } = meta;
-  const { previous, next } = getAdjacentLessons(lesson.id);
+  const { previous, next } = getAdjacentLessonsInGroup(lesson.id);
   const handbook = getLessonHandbook(lesson.id, lesson.title);
 
   useEffect(() => {
@@ -83,12 +118,7 @@ export default function LessonDetailPage() {
       const completed = new Set(rows.filter((x) => x.status === "completed").map((x) => x.lesson_id));
       setIsCompleted(completed.has(lesson.id));
 
-      const all = [lesson.id];
-      let cursor = previous;
-      while (cursor) {
-        all.unshift(cursor.id);
-        cursor = getAdjacentLessons(cursor.id).previous;
-      }
+      const all = getLessonGroup(lesson.id).map((l) => l.id);
       const firstPending = all.find((id) => !completed.has(id)) ?? lesson.id;
       setIsUnlocked(completed.has(lesson.id) || firstPending === lesson.id);
     };
@@ -119,7 +149,7 @@ export default function LessonDetailPage() {
       { onConflict: "user_id,lesson_id" }
     );
 
-    if (existing?.status !== "completed") {
+    if ((existing as { status?: string } | null)?.status !== "completed") {
       await addXp(supabase, user.id, XP_REWARDS.lessonComplete);
       await incrementDailyActivity(supabase, user.id, { lessons_completed: 1 });
     }

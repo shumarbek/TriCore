@@ -94,8 +94,9 @@ export default function DashboardPage() {
 
       if (actData && actData.length > 0) {
         const days = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
+        const rows = actData as Array<{ date: string; time_spent_minutes: number }>;
         setWeekly(
-          actData.map((d) => ({
+          rows.map((d) => ({
             day: days[new Date(d.date).getDay()] || d.date,
             minutes: d.time_spent_minutes,
           }))

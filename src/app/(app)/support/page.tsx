@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
 import { faqItems } from "@/lib/data/mock";
 import { CheckCircle, ChevronDown, Plus, Send } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface Msg {
   id: string;
@@ -29,7 +29,8 @@ export default function SupportPage() {
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
-  const supabase = createClient();
+  const [error, setError] = useState("");
+  const supabase = useMemo(() => createClient(), []);
 
   const loadMessages = useCallback(async () => {
     if (!user) return;
@@ -60,11 +61,17 @@ export default function SupportPage() {
     e.preventDefault();
     if (!user || !subject.trim() || !body.trim()) return;
     setSending(true);
-    await supabase.from("messages").insert({
+    setError("");
+    const { error: sendError } = await supabase.from("messages").insert({
       user_id: user.id,
       subject: subject.trim(),
       body: body.trim(),
-    });
+    } as never);
+    if (sendError) {
+      setError(sendError.message);
+      setSending(false);
+      return;
+    }
     setSubject("");
     setBody("");
     setSent(true);
@@ -88,6 +95,11 @@ export default function SupportPage() {
         {sent && (
           <div className="p-3 mb-4 rounded-xl bg-success/10 border border-success/25 text-sm text-success flex items-center gap-2">
             <CheckCircle className="w-4 h-4" /> Xabar yuborildi! Admin tez orada javob beradi.
+          </div>
+        )}
+        {error && (
+          <div className="p-3 mb-4 rounded-xl bg-danger/10 border border-danger/25 text-sm text-danger">
+            {error}
           </div>
         )}
         <form className="space-y-3" onSubmit={sendMessage}>

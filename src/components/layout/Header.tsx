@@ -1,10 +1,12 @@
 "use client";
 
 import { useAuth } from "@/contexts/AuthProvider";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Bell, Flame, LogOut, Menu, Search, Zap } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -12,8 +14,49 @@ interface HeaderProps {
 }
 
 export function Header({ onMenuClick, title }: HeaderProps) {
-  const { profile, signOut } = useAuth();
+  const { profile, user, signOut } = useAuth();
   const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [openNotifications, setOpenNotifications] = useState(false);
+  const [replies, setReplies] = useState<Array<{ id: string; subject: string; replied_at: string | null }>>([]);
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+
+  const seenKey = user ? `tricore-seen-notifications-${user.id}` : "";
+
+  const loadNotifications = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("messages")
+      .select("id, subject, replied_at")
+      .eq("user_id", user.id)
+      .eq("status", "replied")
+      .order("replied_at", { ascending: false })
+      .limit(10);
+    setReplies((data ?? []) as Array<{ id: string; subject: string; replied_at: string | null }>);
+  }, [supabase, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const raw = localStorage.getItem(seenKey);
+    setSeenIds(new Set(raw ? JSON.parse(raw) : []));
+    loadNotifications();
+    const channel = supabase
+      .channel(`header-notifications-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages", filter: `user_id=eq.${user.id}` },
+        () => loadNotifications()
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadNotifications, seenKey, supabase, user]);
+
+  const unreadCount = useMemo(
+    () => replies.filter((r) => !seenIds.has(r.id)).length,
+    [replies, seenIds]
+  );
 
   const initials = profile?.full_name
     ? profile.full_name
@@ -68,13 +111,49 @@ export function Header({ onMenuClick, title }: HeaderProps) {
           </div>
         )}
 
-        <button
-          type="button"
-          className="relative p-2 rounded-xl hover:bg-surface-elevated text-text-muted"
-        >
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full" />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            className="relative p-2 rounded-xl hover:bg-surface-elevated text-text-muted"
+            onClick={() => {
+              setOpenNotifications((v) => !v);
+              if (user) {
+                const next = new Set([...seenIds, ...replies.map((r) => r.id)]);
+                setSeenIds(next);
+                localStorage.setItem(seenKey, JSON.stringify([...next]));
+              }
+            }}
+          >
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-accent text-[10px] text-white leading-4 text-center">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+          {openNotifications && (
+            <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface shadow-xl z-50 p-2">
+              <p className="px-2 py-1 text-xs font-semibold text-text-muted">Bildirishnomalar</p>
+              {replies.length === 0 ? (
+                <p className="px-2 py-4 text-sm text-text-muted">Yangi bildirishnoma yo&apos;q.</p>
+              ) : (
+                replies.map((r) => (
+                  <Link
+                    key={r.id}
+                    href="/support"
+                    className="block rounded-lg px-2 py-2 hover:bg-surface-elevated"
+                    onClick={() => setOpenNotifications(false)}
+                  >
+                    <p className="text-sm font-medium truncate">Support javobi: {r.subject}</p>
+                    <p className="text-xs text-text-muted">
+                      {r.replied_at ? new Date(r.replied_at).toLocaleString() : ""}
+                    </p>
+                  </Link>
+                ))
+              )}
+            </div>
+          )}
+        </div>
 
         <button
           type="button"

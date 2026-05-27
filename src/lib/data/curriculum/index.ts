@@ -116,6 +116,27 @@ export function getAdjacentLessons(lessonId: string) {
   };
 }
 
+export function getLessonGroup(lessonId: string) {
+  const current = getAllLessons().find((l) => l.id === lessonId);
+  if (!current) return [];
+  return getAllLessons().filter(
+    (l) =>
+      l.subjectId === current.subjectId &&
+      l.sectionId === current.sectionId &&
+      l.subSectionId === current.subSectionId
+  );
+}
+
+export function getAdjacentLessonsInGroup(lessonId: string) {
+  const lessons = getLessonGroup(lessonId);
+  const index = lessons.findIndex((l) => l.id === lessonId);
+  if (index === -1) return { previous: null, next: null };
+  return {
+    previous: index > 0 ? lessons[index - 1] : null,
+    next: index < lessons.length - 1 ? lessons[index + 1] : null,
+  };
+}
+
 /** Har bir fan uchun userning hozir o'rganib yetib kelgan (in_progress yoki birinchi available) darsini qaytaradi */
 export function getCurrentLessonPerSubject() {
   return curricula.map((subject) => {

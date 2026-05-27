@@ -25,7 +25,7 @@ interface EQ {
 
 export default function AdminExamsPage() {
   const { user } = useAuth();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [subjectId, setSubjectId] = useState("physics");
   const [sectionId, setSectionId] = useState("");
   const [subSectionId, setSubSectionId] = useState("");
@@ -86,9 +86,9 @@ export default function AdminExamsPage() {
       explanation: form.explanation,
     };
     if (editing) {
-      await supabase.from("exam_questions").update(payload).eq("id", editing.id);
+      await supabase.from("exam_questions").update(payload as never).eq("id", editing.id);
     } else {
-      await supabase.from("exam_questions").insert({ ...payload, created_by: user!.id });
+      await supabase.from("exam_questions").insert({ ...payload, created_by: user!.id } as never);
     }
     setEditing(null);
     setShowAdd(false);

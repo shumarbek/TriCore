@@ -2,6 +2,8 @@
 
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { createClient } from "@/lib/supabase/client";
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -17,39 +19,7 @@ import {
   YAxis,
 } from "recharts";
 
-const registrations = [
-  { month: "Yan", count: 420 },
-  { month: "Fev", count: 680 },
-  { month: "Mar", count: 920 },
-  { month: "Apr", count: 1100 },
-  { month: "May", count: 1450 },
-];
-
-const dailyActive = [
-  { day: "Dush", users: 890 },
-  { day: "Sesh", users: 1020 },
-  { day: "Chor", users: 980 },
-  { day: "Pay", users: 1150 },
-  { day: "Jum", users: 1280 },
-  { day: "Shan", users: 1420 },
-  { day: "Yak", users: 1100 },
-];
-
-const aiUsage = [
-  { day: "Dush", requests: 2100 },
-  { day: "Sesh", requests: 2450 },
-  { day: "Chor", requests: 1980 },
-  { day: "Pay", requests: 2890 },
-  { day: "Jum", requests: 3120 },
-  { day: "Shan", requests: 3500 },
-  { day: "Yak", requests: 2800 },
-];
-
-const usersBySubject = [
-  { name: "Matematika", value: 4820, color: "var(--primary)" },
-  { name: "Fizika", value: 3910, color: "var(--secondary)" },
-  { name: "Kimyo", value: 2140, color: "var(--success)" },
-];
+const emptyWeek = ["Dush", "Sesh", "Chor", "Pay", "Jum", "Shan", "Yak"];
 
 const tooltipStyle = {
   contentStyle: {
@@ -60,6 +30,75 @@ const tooltipStyle = {
 };
 
 export default function AdminAnalyticsPage() {
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [todayActive, setTodayActive] = useState(0);
+  const [todayAi, setTodayAi] = useState(0);
+  const [registrations, setRegistrations] = useState<Array<{ month: string; count: number }>>([]);
+  const [dailyActive, setDailyActive] = useState(emptyWeek.map((day) => ({ day, users: 0 })));
+  const [aiUsage, setAiUsage] = useState(emptyWeek.map((day) => ({ day, requests: 0 })));
+  const [usersBySubject, setUsersBySubject] = useState([
+    { name: "Matematika", value: 0, color: "var(--primary)" },
+    { name: "Fizika", value: 0, color: "var(--secondary)" },
+    { name: "Kimyo", value: 0, color: "var(--success)" },
+  ]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const today = new Date().toISOString().slice(0, 10);
+    const load = async () => {
+      const [{ count: users }, { count: active }, { data: activity }, { data: ai }, { data: profiles }, { data: progress }] =
+        await Promise.all([
+          supabase.from("profiles").select("*", { count: "exact", head: true }),
+          supabase.from("daily_activity").select("*", { count: "exact", head: true }).eq("date", today),
+          supabase.from("daily_activity").select("date, ai_requests").order("date", { ascending: false }).limit(7),
+          supabase.from("ai_usage").select("created_at").order("created_at", { ascending: false }).limit(200),
+          supabase.from("profiles").select("created_at").order("created_at", { ascending: false }).limit(500),
+          supabase.from("lesson_progress").select("subject_id, user_id").eq("status", "completed"),
+        ]);
+      setTotalUsers(users ?? 0);
+      setTodayActive(active ?? 0);
+
+      const days = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
+      const daily = emptyWeek.map((day) => ({ day, users: 0 }));
+      for (const row of ((activity ?? []) as Array<{ date: string; ai_requests: number }>)) {
+        const label = days[new Date(row.date).getDay()];
+        const item = daily.find((d) => d.day === label);
+        if (item) item.users += 1;
+      }
+      setDailyActive(daily);
+      setTodayAi(((activity ?? []) as Array<{ date: string; ai_requests: number }>).find((x) => x.date === today)?.ai_requests ?? 0);
+
+      const aiDaily = emptyWeek.map((day) => ({ day, requests: 0 }));
+      for (const row of ((ai ?? []) as Array<{ created_at: string }>)) {
+        const label = days[new Date(row.created_at).getDay()];
+        const item = aiDaily.find((d) => d.day === label);
+        if (item) item.requests += 1;
+      }
+      setAiUsage(aiDaily);
+
+      const monthMap = new Map<string, number>();
+      for (const row of ((profiles ?? []) as Array<{ created_at: string }>)) {
+        const label = new Date(row.created_at).toLocaleString("uz-UZ", { month: "short" });
+        monthMap.set(label, (monthMap.get(label) ?? 0) + 1);
+      }
+      setRegistrations([...monthMap.entries()].slice(0, 6).reverse().map(([month, count]) => ({ month, count })));
+
+      const subjectUsers = new Map<string, Set<string>>();
+      for (const row of ((progress ?? []) as Array<{ subject_id: string; user_id: string }>)) {
+        if (!subjectUsers.has(row.subject_id)) subjectUsers.set(row.subject_id, new Set());
+        subjectUsers.get(row.subject_id)!.add(row.user_id);
+      }
+      setUsersBySubject([
+        { name: "Matematika", value: subjectUsers.get("mathematics")?.size ?? 0, color: "var(--primary)" },
+        { name: "Fizika", value: subjectUsers.get("physics")?.size ?? 0, color: "var(--secondary)" },
+        { name: "Kimyo", value: subjectUsers.get("chemistry")?.size ?? 0, color: "var(--success)" },
+      ]);
+    };
+    load();
+  }, []);
+
+  const topSubject = usersBySubject.reduce((a, b) => (b.value > a.value ? b : a), usersBySubject[0]);
+
   return (
     <div>
       <PageHeader
@@ -70,23 +109,23 @@ export default function AdminAnalyticsPage() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <Card>
           <p className="text-sm text-text-muted">Jami ro&apos;yxatdan o&apos;tgan</p>
-          <p className="text-3xl font-bold mt-1">12,847</p>
-          <p className="text-xs text-success mt-1">+12% oylik</p>
+          <p className="text-3xl font-bold mt-1">{totalUsers.toLocaleString()}</p>
+          <p className="text-xs text-text-muted mt-1">profiles jadvali</p>
         </Card>
         <Card>
           <p className="text-sm text-text-muted">Bugun aktiv</p>
-          <p className="text-3xl font-bold mt-1">3,421</p>
+          <p className="text-3xl font-bold mt-1">{todayActive.toLocaleString()}</p>
           <p className="text-xs text-text-muted mt-1">DAU</p>
         </Card>
         <Card>
           <p className="text-sm text-text-muted">AI so&apos;rovlar (bugun)</p>
-          <p className="text-3xl font-bold mt-1">3,120</p>
-          <p className="text-xs text-accent mt-1">+8% kechagidan</p>
+          <p className="text-3xl font-bold mt-1">{todayAi.toLocaleString()}</p>
+          <p className="text-xs text-accent mt-1">daily_activity</p>
         </Card>
         <Card>
           <p className="text-sm text-text-muted">Eng ko&apos;p fan</p>
-          <p className="text-3xl font-bold mt-1">Math</p>
-          <p className="text-xs text-text-muted mt-1">4,820 user</p>
+          <p className="text-3xl font-bold mt-1">{topSubject.name}</p>
+          <p className="text-xs text-text-muted mt-1">{topSubject.value.toLocaleString()} user</p>
         </Card>
       </div>
 

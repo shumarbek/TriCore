@@ -7,14 +7,13 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Select } from "@/components/ui/Input";
 import { useAuth } from "@/contexts/AuthProvider";
 import {
-  countQuestionsInScope,
   getExamScopeLabel,
   getSections,
   getSubSections,
 } from "@/lib/data/curriculum";
 import { XP_REWARDS, addXp, incrementDailyActivity } from "@/lib/learning/gamification";
 import { createClient } from "@/lib/supabase/client";
-import { Clock, Database, Sparkles, Target } from "lucide-react";
+import { CheckCircle, Clock, Database, Sparkles, Target } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 const SUBJECT_OPTIONS = [
@@ -22,6 +21,14 @@ const SUBJECT_OPTIONS = [
   { value: "physics", label: "Fizika" },
   { value: "chemistry", label: "Kimyo" },
 ];
+
+interface ExamQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correct_index: number;
+  explanation: string;
+}
 
 export default function PracticeExamsPage() {
   const { user, refreshProfile } = useAuth();
@@ -31,7 +38,11 @@ export default function PracticeExamsPage() {
   const [questionCount, setQuestionCount] = useState(20);
   const [timeLimit, setTimeLimit] = useState(45);
   const [generating, setGenerating] = useState(false);
-  const supabase = createClient();
+  const [poolSize, setPoolSize] = useState(0);
+  const [examQuestions, setExamQuestions] = useState<ExamQuestion[]>([]);
+  const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [result, setResult] = useState<{ score: number; correct: number; total: number } | null>(null);
+  const supabase = useMemo(() => createClient(), []);
 
   const sections = useMemo(() => getSections(subjectId), [subjectId]);
 
@@ -57,13 +68,20 @@ export default function PracticeExamsPage() {
     [subSections]
   );
 
-  const poolSize = useMemo(
-    () =>
-      effectiveSectionId
-        ? countQuestionsInScope(subjectId, effectiveSectionId, subSectionId)
-        : 0,
-    [subjectId, effectiveSectionId, subSectionId]
-  );
+  useEffect(() => {
+    if (!effectiveSectionId) return;
+    const loadCount = async () => {
+      let query = supabase
+        .from("exam_questions")
+        .select("id", { count: "exact", head: true })
+        .eq("subject_id", subjectId)
+        .eq("section_id", effectiveSectionId);
+      if (subSectionId !== "all") query = query.eq("sub_section_id", subSectionId);
+      const { count } = await query;
+      setPoolSize(count ?? 0);
+    };
+    loadCount();
+  }, [supabase, subjectId, effectiveSectionId, subSectionId]);
 
   const scopeLabel = useMemo(
     () =>
@@ -89,10 +107,24 @@ export default function PracticeExamsPage() {
   const startExam = async () => {
     if (!user || !effectiveSectionId) return;
     setGenerating(true);
-    const total = Math.max(1, questionCount);
-    const correct = Math.max(0, Math.min(total, Math.round(total * 0.7)));
-    const score = Math.round((correct / total) * 100);
+    let query = supabase
+      .from("exam_questions")
+      .select("id, question, options, correct_index, explanation")
+      .eq("subject_id", subjectId)
+      .eq("section_id", effectiveSectionId);
+    if (subSectionId !== "all") query = query.eq("sub_section_id", subSectionId);
+    const { data } = await query.limit(questionCount);
+    setExamQuestions((data ?? []) as unknown as ExamQuestion[]);
+    setAnswers({});
+    setResult(null);
+    setGenerating(false);
+  };
 
+  const submitExam = async () => {
+    if (!user || examQuestions.length === 0) return;
+    const correct = examQuestions.filter((q) => answers[q.id] === q.correct_index).length;
+    const total = examQuestions.length;
+    const score = Math.round((correct / total) * 100);
     await supabase.from("exam_results").insert({
       user_id: user.id,
       subject_id: subjectId,
@@ -106,7 +138,7 @@ export default function PracticeExamsPage() {
     await addXp(supabase, user.id, XP_REWARDS.practiceExam);
     await incrementDailyActivity(supabase, user.id, { exams_taken: 1, time_spent_minutes: timeLimit });
     await refreshProfile();
-    setGenerating(false);
+    setResult({ score, correct, total });
   };
 
   return (
@@ -185,6 +217,66 @@ export default function PracticeExamsPage() {
           Imtihonni boshlash
         </Button>
       </Card>
+
+      {examQuestions.length > 0 && (
+        <Card className="mb-8">
+          <div className="flex items-center justify-between gap-3 mb-5">
+            <h3 className="font-semibold flex items-center gap-2">
+              <Target className="w-5 h-5 text-primary" />
+              Imtihon
+            </h3>
+            {result && (
+              <Badge variant="success">
+                {result.correct}/{result.total} · {result.score}%
+              </Badge>
+            )}
+          </div>
+          <div className="space-y-5">
+            {examQuestions.map((q, qi) => (
+              <div key={q.id} className="rounded-xl border border-border p-4">
+                <p className="font-medium text-sm mb-3">
+                  {qi + 1}. {q.question}
+                </p>
+                <div className="grid gap-2">
+                  {q.options.map((option, oi) => {
+                    const selected = answers[q.id] === oi;
+                    const correct = result && q.correct_index === oi;
+                    return (
+                      <button
+                        key={`${q.id}-${oi}`}
+                        type="button"
+                        disabled={Boolean(result)}
+                        onClick={() => setAnswers((a) => ({ ...a, [q.id]: oi }))}
+                        className={`text-left rounded-lg border px-3 py-2 text-sm transition-colors ${
+                          correct
+                            ? "border-success bg-success/10 text-success"
+                            : selected
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border hover:bg-surface-elevated"
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+                {result && q.explanation && (
+                  <p className="text-xs text-text-muted mt-3">{q.explanation}</p>
+                )}
+              </div>
+            ))}
+          </div>
+          <Button
+            variant="primary"
+            className="w-full mt-5"
+            disabled={Boolean(result) || Object.keys(answers).length < examQuestions.length}
+            onClick={submitExam}
+          >
+            <CheckCircle className="w-4 h-4" />
+            Javoblarni yakunlash
+          </Button>
+        </Card>
+      )}
 
       <div className="grid sm:grid-cols-2 gap-4">
         <Card>

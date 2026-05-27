@@ -49,18 +49,15 @@ export default function SubjectRoadmapPage() {
     load();
   }, [user, subjectId]);
 
-  const orderedLessonIds = useMemo(
-    () =>
-      curriculum.sections.flatMap((s) =>
-        s.subSections.flatMap((sub) => sub.lessons.map((l) => l.id))
-      ),
-    [curriculum]
-  );
-
-  const firstPendingId = useMemo(
-    () => orderedLessonIds.find((id) => !completedIds.has(id)) ?? null,
-    [orderedLessonIds, completedIds]
-  );
+  const firstPendingId = useMemo(() => {
+    for (const section of curriculum.sections) {
+      for (const sub of section.subSections) {
+        const pending = sub.lessons.find((l) => !completedIds.has(l.id));
+        if (pending) return pending.id;
+      }
+    }
+    return null;
+  }, [curriculum, completedIds]);
 
   const continueLesson = curriculum.sections
     .flatMap((s) => s.subSections)
@@ -99,9 +96,11 @@ export default function SubjectRoadmapPage() {
                   <p className="text-sm font-semibold text-primary mb-2">{sub.name}</p>
                   <div className="grid sm:grid-cols-2 gap-2">
                     {sub.lessons.map((lesson) => {
+                      const firstPendingInSub =
+                        sub.lessons.find((l) => !completedIds.has(l.id))?.id ?? null;
                       const status = completedIds.has(lesson.id)
                         ? "completed"
-                        : lesson.id === firstPendingId
+                        : lesson.id === firstPendingInSub
                           ? "in_progress"
                           : "locked";
                       const cfg = statusConfig[status];
