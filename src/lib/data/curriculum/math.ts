@@ -70,7 +70,7 @@ export const mathematicsCurriculum: SubjectCurriculum = {
             "Chiziqli tenglamalar",
             "Kvadrat tenglamalar",
             "Funksiyalar va grafiklar",
-          ], 3),
+          ], 0),
         },
       ],
     },
@@ -82,7 +82,7 @@ export const mathematicsCurriculum: SubjectCurriculum = {
         {
           id: "planimetriya",
           name: "Planimetriya",
-          lessons: buildLessons("math-geo-plan", planimetriya, 5),
+          lessons: buildLessons("math-geo-plan", planimetriya, 0),
         },
         {
           id: "stereometriya",

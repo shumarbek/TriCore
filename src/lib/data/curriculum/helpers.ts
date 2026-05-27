@@ -12,7 +12,9 @@ export function buildLessons(
 ): CurriculumLesson[] {
   return titles.map((title, i) => {
     let status: LessonStatus = "locked";
-    if (i < completedCount) status = "completed";
+    if (completedCount <= 0) {
+      status = i === 0 ? "available" : "locked";
+    } else if (i < completedCount) status = "completed";
     else if (i === completedCount) status = "in_progress";
     else if (i === completedCount + 1) status = "available";
 

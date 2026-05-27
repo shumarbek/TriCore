@@ -4,8 +4,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Input";
-import { getLessonById } from "@/lib/data/curriculum";
+import { useAuth } from "@/contexts/AuthProvider";
+import { getAdjacentLessons, getLessonById } from "@/lib/data/curriculum";
 import { getLessonHandbook } from "@/lib/data/handbook";
+import { XP_REWARDS, addXp, incrementDailyActivity } from "@/lib/learning/gamification";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
   BookMarked,
@@ -20,8 +23,8 @@ import {
   Volume2,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const formulas = [
   { name: "Asosiy formula", expr: "F = ma" },
@@ -39,10 +42,17 @@ const tabs = [
 
 export default function LessonDetailPage() {
   const params = useParams();
+  const router = useRouter();
+  const { user, refreshProfile } = useAuth();
+  const supabase = createClient();
   const lessonId = params.id as string;
   const meta = getLessonById(lessonId);
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Ma'lumotnoma");
   const [playing, setPlaying] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [miniExamBusy, setMiniExamBusy] = useState(false);
   const [noteContent, setNoteContent] = useState(
     "# Dars qaydlari\n\n- Muhim punktlar\n- Misollar\n- Savollar"
   );
@@ -59,7 +69,84 @@ export default function LessonDetailPage() {
   }
 
   const { lesson, subjectName, sectionName, subSectionName } = meta;
+  const { previous, next } = getAdjacentLessons(lesson.id);
   const handbook = getLessonHandbook(lesson.id, lesson.title);
+
+  useEffect(() => {
+    if (!user) return;
+    const load = async () => {
+      const { data } = await supabase
+        .from("lesson_progress")
+        .select("lesson_id, status")
+        .eq("user_id", user.id);
+      const rows = (data ?? []) as Array<{ lesson_id: string; status: string }>;
+      const completed = new Set(rows.filter((x) => x.status === "completed").map((x) => x.lesson_id));
+      setIsCompleted(completed.has(lesson.id));
+
+      const all = [lesson.id];
+      let cursor = previous;
+      while (cursor) {
+        all.unshift(cursor.id);
+        cursor = getAdjacentLessons(cursor.id).previous;
+      }
+      const firstPending = all.find((id) => !completed.has(id)) ?? lesson.id;
+      setIsUnlocked(completed.has(lesson.id) || firstPending === lesson.id);
+    };
+    load();
+  }, [lesson.id, previous, supabase, user]);
+
+  const markLessonCompleted = async () => {
+    if (!user || isCompleted || !isUnlocked) return;
+    setBusy(true);
+    const { data: existing } = await supabase
+      .from("lesson_progress")
+      .select("status")
+      .eq("user_id", user.id)
+      .eq("lesson_id", lesson.id)
+      .maybeSingle();
+
+    await supabase.from("lesson_progress").upsert(
+      {
+        user_id: user.id,
+        lesson_id: lesson.id,
+        subject_id: meta.subjectId,
+        section_id: meta.sectionId,
+        sub_section_id: meta.subSectionId,
+        status: "completed",
+        progress_percent: 100,
+        completed_at: new Date().toISOString(),
+      } as never,
+      { onConflict: "user_id,lesson_id" }
+    );
+
+    if (existing?.status !== "completed") {
+      await addXp(supabase, user.id, XP_REWARDS.lessonComplete);
+      await incrementDailyActivity(supabase, user.id, { lessons_completed: 1 });
+    }
+    await refreshProfile();
+    setIsCompleted(true);
+    setBusy(false);
+    if (next) router.push(`/lessons/${next.id}`);
+  };
+
+  const submitMiniExam = async () => {
+    if (!user) return;
+    setMiniExamBusy(true);
+    await supabase.from("exam_results").insert({
+      user_id: user.id,
+      subject_id: meta.subjectId,
+      section_id: meta.sectionId,
+      sub_section_id: lesson.id,
+      score: 100,
+      total_questions: 10,
+      correct_answers: 10,
+      time_spent: 15,
+    } as never);
+    await addXp(supabase, user.id, XP_REWARDS.lessonExam);
+    await incrementDailyActivity(supabase, user.id, { exams_taken: 1 });
+    await refreshProfile();
+    setMiniExamBusy(false);
+  };
 
   const tabIcons: Partial<Record<(typeof tabs)[number], React.ComponentType<{ className?: string }>>> = {
     "Ma'lumotnoma": BookMarked,
@@ -99,7 +186,7 @@ export default function LessonDetailPage() {
               <Button variant="ghost" size="sm"><SkipForward className="w-4 h-4" /></Button>
               <Button variant="ghost" size="sm"><Volume2 className="w-4 h-4" /> CC</Button>
               <div className="flex-1" />
-              <Badge variant="accent">65% ko&apos;rildi</Badge>
+              <Badge variant="accent">0% ko&apos;rildi</Badge>
             </div>
           </Card>
 
@@ -207,7 +294,7 @@ export default function LessonDetailPage() {
             {activeTab === "Mini Exam" && (
               <div className="text-center py-8">
                 <p className="text-text-muted mb-4">10 ta MCQ · 15 daqiqa</p>
-                <Button variant="primary">Mini imtihonni boshlash</Button>
+                <Button variant="primary" onClick={submitMiniExam} loading={miniExamBusy}>Mini imtihonni yakunlash</Button>
               </div>
             )}
             {activeTab === "Homework" && (
@@ -277,11 +364,32 @@ export default function LessonDetailPage() {
             ))}
           </Card>
           <Card>
-            <Button variant="primary" className="w-full mb-2">Yakunlash</Button>
-            <Button variant="outline" className="w-full">Keyingi dars →</Button>
+            <Button variant="primary" className="w-full mb-2" onClick={markLessonCompleted} loading={busy} disabled={!isUnlocked || isCompleted}>{isCompleted ? "Yakunlangan" : "Yakunlash"}</Button>
+            <div className="grid grid-cols-2 gap-2">
+              {previous ? (
+                <Link href={`/lessons/${previous.id}`} className="w-full">
+                  <Button variant="outline" className="w-full">Oldingi</Button>
+                </Link>
+              ) : (
+                <Button variant="outline" className="w-full" disabled>
+                  Oldingi
+                </Button>
+              )}
+              {next ? (
+                <Link href={`/lessons/${next.id}`} className="w-full">
+                  <Button variant="outline" className="w-full">Keyingi</Button>
+                </Link>
+              ) : (
+                <Button variant="outline" className="w-full" disabled>
+                  Keyingi
+                </Button>
+              )}
+            </div>
           </Card>
         </div>
       </div>
     </div>
   );
 }
+
+

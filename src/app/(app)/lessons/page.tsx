@@ -33,7 +33,7 @@ export default function LessonsPage() {
       ? allLessons
       : allLessons.filter((l) => l.subjectId === filter);
 
-  const active = filtered.filter((l) => l.status !== "locked").slice(0, 30);
+  const active = filtered.slice(0, 60);
 
   return (
     <div>
@@ -68,7 +68,7 @@ export default function LessonsPage() {
       <div className="grid gap-3">
         {active.map((lesson, i) => (
           <Card key={lesson.id} delay={Math.min(i * 0.02, 0.3)} hover>
-            <Link href={`/lessons/${lesson.id}`} className="flex items-center gap-4 group">
+            <div className="flex items-center gap-4 group">
               <div className="w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center group-hover:bg-primary/25 transition-colors">
                 {lesson.status === "in_progress" ? (
                   <Play className="w-5 h-5 text-primary" />
@@ -89,10 +89,17 @@ export default function LessonsPage() {
                   <ProgressBar value={45} className="mt-2 max-w-xs" size="sm" />
                 )}
               </div>
-              <Badge variant={statusBadge[lesson.status]}>
-                {statusLabel[lesson.status]}
-              </Badge>
-            </Link>
+              <div className="flex items-center gap-2">
+                <Badge variant={statusBadge[lesson.status]}>
+                  {statusLabel[lesson.status]}
+                </Badge>
+                {lesson.status !== "locked" ? (
+                  <Link href={`/lessons/${lesson.id}`}>
+                    <Badge variant="accent">Ochish</Badge>
+                  </Link>
+                ) : null}
+              </div>
+            </div>
           </Card>
         ))}
       </div>

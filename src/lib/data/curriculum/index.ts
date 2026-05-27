@@ -72,6 +72,7 @@ export function getLessonById(lessonId: string) {
             subjectName: subject.name,
             sectionId: section.id,
             sectionName: section.name,
+            subSectionId: sub.id,
             subSectionName: sub.name,
           };
         }
@@ -97,6 +98,22 @@ export function getAllLessons() {
       )
     )
   );
+}
+
+export function getLessonsBySubject(subjectId: string) {
+  return getAllLessons().filter((l) => l.subjectId === subjectId);
+}
+
+export function getAdjacentLessons(lessonId: string) {
+  const lessons = getAllLessons();
+  const index = lessons.findIndex((l) => l.id === lessonId);
+  if (index === -1) {
+    return { previous: null, next: null };
+  }
+  return {
+    previous: index > 0 ? lessons[index - 1] : null,
+    next: index < lessons.length - 1 ? lessons[index + 1] : null,
+  };
 }
 
 /** Har bir fan uchun userning hozir o'rganib yetib kelgan (in_progress yoki birinchi available) darsini qaytaradi */

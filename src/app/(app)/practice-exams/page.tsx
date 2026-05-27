@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Select } from "@/components/ui/Input";
+import { useAuth } from "@/contexts/AuthProvider";
 import {
   countQuestionsInScope,
   getExamScopeLabel,
   getSections,
   getSubSections,
 } from "@/lib/data/curriculum";
+import { XP_REWARDS, addXp, incrementDailyActivity } from "@/lib/learning/gamification";
+import { createClient } from "@/lib/supabase/client";
 import { Clock, Database, Sparkles, Target } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -21,12 +24,14 @@ const SUBJECT_OPTIONS = [
 ];
 
 export default function PracticeExamsPage() {
+  const { user, refreshProfile } = useAuth();
   const [subjectId, setSubjectId] = useState("physics");
   const [sectionId, setSectionId] = useState("");
   const [subSectionId, setSubSectionId] = useState("all");
   const [questionCount, setQuestionCount] = useState(20);
   const [timeLimit, setTimeLimit] = useState(45);
   const [generating, setGenerating] = useState(false);
+  const supabase = createClient();
 
   const sections = useMemo(() => getSections(subjectId), [subjectId]);
 
@@ -81,9 +86,27 @@ export default function PracticeExamsPage() {
     setSubSectionId("all");
   };
 
-  const startExam = () => {
+  const startExam = async () => {
+    if (!user || !effectiveSectionId) return;
     setGenerating(true);
-    setTimeout(() => setGenerating(false), 2000);
+    const total = Math.max(1, questionCount);
+    const correct = Math.max(0, Math.min(total, Math.round(total * 0.7)));
+    const score = Math.round((correct / total) * 100);
+
+    await supabase.from("exam_results").insert({
+      user_id: user.id,
+      subject_id: subjectId,
+      section_id: effectiveSectionId,
+      sub_section_id: subSectionId,
+      score,
+      total_questions: total,
+      correct_answers: correct,
+      time_spent: Math.max(1, timeLimit),
+    } as never);
+    await addXp(supabase, user.id, XP_REWARDS.practiceExam);
+    await incrementDailyActivity(supabase, user.id, { exams_taken: 1, time_spent_minutes: timeLimit });
+    await refreshProfile();
+    setGenerating(false);
   };
 
   return (

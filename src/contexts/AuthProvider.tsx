@@ -1,6 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
+import { ensureDailyActive } from "@/lib/learning/gamification";
 import type { User } from "@supabase/supabase-js";
 import {
   createContext,
@@ -88,7 +89,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } = await supabase.auth.getSession();
       if (session?.user) {
         setUser(session.user);
-        await fetchProfile(session.user.id);
+        const p = await fetchProfile(session.user.id);
+        await ensureDailyActive(supabase, session.user.id, p?.last_seen, p?.streak);
         await updateOnlineStatus(session.user.id, true);
       }
       setLoading(false);
@@ -101,7 +103,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
         setUser(session.user);
-        await fetchProfile(session.user.id);
+        const p = await fetchProfile(session.user.id);
+        await ensureDailyActive(supabase, session.user.id, p?.last_seen, p?.streak);
         await updateOnlineStatus(session.user.id, true);
       } else {
         setUser(null);

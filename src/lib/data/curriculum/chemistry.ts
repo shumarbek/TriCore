@@ -18,7 +18,7 @@ export const chemistryCurriculum: SubjectCurriculum = {
             "Molekulalar",
             "Davriy jadval",
             "Kimyoviy bog'lanishlar",
-          ], 2),
+          ], 0),
         },
       ],
     },

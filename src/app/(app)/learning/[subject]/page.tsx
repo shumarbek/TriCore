@@ -4,12 +4,15 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useAuth } from "@/contexts/AuthProvider";
 import { getCurriculum } from "@/lib/data/curriculum";
 import { subjects } from "@/lib/data/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { CheckCircle, Circle, Lock, Play } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 const statusConfig = {
   completed: { icon: CheckCircle, badge: "success" as const, label: "Yakunlangan" },
@@ -21,17 +24,48 @@ const statusConfig = {
 export default function SubjectRoadmapPage() {
   const params = useParams();
   const subjectId = params.subject as string;
+  const { user } = useAuth();
   const subject = subjects.find((s) => s.id === subjectId);
   const curriculum = getCurriculum(subjectId);
+  const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
 
   if (!subject || !curriculum) {
     return <p className="text-text-muted">Fan topilmadi</p>;
   }
 
+  useEffect(() => {
+    if (!user) return;
+    const supabase = createClient();
+    const load = async () => {
+      const { data } = await supabase
+        .from("lesson_progress")
+        .select("lesson_id, status")
+        .eq("user_id", user.id)
+        .eq("subject_id", subjectId);
+      const rows = (data ?? []) as Array<{ lesson_id: string; status: string }>;
+      const done = new Set(rows.filter((x) => x.status === "completed").map((x) => x.lesson_id));
+      setCompletedIds(done);
+    };
+    load();
+  }, [user, subjectId]);
+
+  const orderedLessonIds = useMemo(
+    () =>
+      curriculum.sections.flatMap((s) =>
+        s.subSections.flatMap((sub) => sub.lessons.map((l) => l.id))
+      ),
+    [curriculum]
+  );
+
+  const firstPendingId = useMemo(
+    () => orderedLessonIds.find((id) => !completedIds.has(id)) ?? null,
+    [orderedLessonIds, completedIds]
+  );
+
   const continueLesson = curriculum.sections
     .flatMap((s) => s.subSections)
     .flatMap((sub) => sub.lessons)
-    .find((l) => l.status === "in_progress");
+    .find((l) => l.id === firstPendingId);
 
   return (
     <div>
@@ -65,7 +99,11 @@ export default function SubjectRoadmapPage() {
                   <p className="text-sm font-semibold text-primary mb-2">{sub.name}</p>
                   <div className="grid sm:grid-cols-2 gap-2">
                     {sub.lessons.map((lesson) => {
-                      const status = lesson.status;
+                      const status = completedIds.has(lesson.id)
+                        ? "completed"
+                        : lesson.id === firstPendingId
+                          ? "in_progress"
+                          : "locked";
                       const cfg = statusConfig[status];
                       const Icon = cfg.icon;
                       const className = cn(

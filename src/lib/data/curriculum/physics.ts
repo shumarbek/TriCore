@@ -189,7 +189,7 @@ export const physicsCurriculum: SubjectCurriculum = {
         {
           id: "boshlangich-mavzular",
           name: "Boshlang'ich fizika mavzulari",
-          lessons: buildLessons("phys-bosh", boshlangich, 8),
+          lessons: buildLessons("phys-bosh", boshlangich, 0),
         },
       ],
     },
@@ -201,7 +201,7 @@ export const physicsCurriculum: SubjectCurriculum = {
         {
           id: "kinematika",
           name: "I. Kinematika asoslari",
-          lessons: buildLessons("phys-kin", kinematica, 2),
+          lessons: buildLessons("phys-kin", kinematica, 0),
         },
         {
           id: "dinamika",
@@ -228,7 +228,7 @@ export const physicsCurriculum: SubjectCurriculum = {
         {
           id: "molekulyar-asoslari",
           name: "I. Molekulyar fizika asoslari",
-          lessons: buildLessons("phys-mol", molekulyar, 4),
+          lessons: buildLessons("phys-mol", molekulyar, 0),
         },
         {
           id: "termodinamika-asoslari",
