@@ -31,6 +31,17 @@ export default function LearningPage() {
       setCompletedIds(done);
     };
     load();
+    const channel = supabase
+      .channel(`learning-progress-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "lesson_progress", filter: `user_id=eq.${user.id}` },
+        () => load()
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const subjectProgress = useMemo(() => {

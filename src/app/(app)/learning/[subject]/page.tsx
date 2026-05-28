@@ -6,7 +6,9 @@ import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAuth } from "@/contexts/AuthProvider";
 import { getCurriculum } from "@/lib/data/curriculum";
+import type { SubjectCurriculum } from "@/lib/data/curriculum";
 import { subjects } from "@/lib/data/navigation";
+import type { LessonContentOverride } from "@/lib/lesson-content";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { CheckCircle, Circle, Lock, Play } from "lucide-react";
@@ -28,15 +30,66 @@ export default function SubjectRoadmapPage() {
   const subject = subjects.find((s) => s.id === subjectId);
   const curriculum = getCurriculum(subjectId);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
+  const supabase = useMemo(() => createClient(), []);
+  const [contentRows, setContentRows] = useState<LessonContentOverride[]>([]);
 
-  if (!subject || !curriculum) {
-    return <p className="text-text-muted">Fan topilmadi</p>;
-  }
+  const displayCurriculum = useMemo<SubjectCurriculum | null>(() => {
+    if (!curriculum) return null;
+    const baseIds = new Set(
+      curriculum.sections.flatMap((section) =>
+        section.subSections.flatMap((sub) => sub.lessons.map((lesson) => lesson.id))
+      )
+    );
+    const overrides = new Map(contentRows.map((row) => [row.lesson_id, row]));
+
+    const sections = curriculum.sections.map((section) => ({
+      ...section,
+      subSections: section.subSections.map((sub) => {
+        const mergedBase = sub.lessons.map((lesson) => {
+          const override = overrides.get(lesson.id);
+          return override
+            ? {
+                ...lesson,
+                title: override.title || lesson.title,
+                order: override.order_index ?? lesson.order,
+              }
+            : lesson;
+        });
+        const customLessons = contentRows
+          .filter(
+            (row) =>
+              !baseIds.has(row.lesson_id) &&
+              row.subject_id === subjectId &&
+              row.section_id === section.id &&
+              row.sub_section_id === sub.id
+          )
+          .map((row) => ({
+            id: row.lesson_id,
+            title: row.title,
+            order: row.order_index ?? 999,
+            status: "available" as const,
+          }));
+
+        return {
+          ...sub,
+          lessons: [...mergedBase, ...customLessons].sort((a, b) => a.order - b.order),
+        };
+      }),
+    }));
+
+    return { ...curriculum, sections };
+  }, [contentRows, curriculum, subjectId]);
 
   useEffect(() => {
-    if (!user) return;
-    const supabase = createClient();
-    const load = async () => {
+    if (!curriculum) return;
+
+    const loadTitles = async () => {
+      const { data } = await supabase.from("lesson_content").select("*");
+      setContentRows((data ?? []) as LessonContentOverride[]);
+    };
+
+    const loadProgress = async () => {
+      if (!user) return;
       const { data } = await supabase
         .from("lesson_progress")
         .select("lesson_id, status")
@@ -46,23 +99,66 @@ export default function SubjectRoadmapPage() {
       const done = new Set(rows.filter((x) => x.status === "completed").map((x) => x.lesson_id));
       setCompletedIds(done);
     };
-    load();
-  }, [user, subjectId]);
+
+    void loadTitles();
+    void loadProgress();
+
+    const channels = [
+      supabase
+        .channel(`lesson-content-subject-${subjectId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "lesson_content" },
+          () => {
+            void loadTitles();
+          }
+        )
+        .subscribe(),
+    ];
+
+    if (user) {
+      channels.push(
+        supabase
+          .channel(`subject-progress-${user.id}-${subjectId}`)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "lesson_progress", filter: `user_id=eq.${user.id}` },
+            () => {
+              void loadProgress();
+            }
+          )
+          .subscribe()
+      );
+    }
+
+    return () => {
+      channels.forEach((channel) => {
+        supabase.removeChannel(channel);
+      });
+    };
+  }, [curriculum, subjectId, supabase, user]);
 
   const firstPendingId = useMemo(() => {
-    for (const section of curriculum.sections) {
+    if (!displayCurriculum) return null;
+    for (const section of displayCurriculum.sections) {
       for (const sub of section.subSections) {
         const pending = sub.lessons.find((l) => !completedIds.has(l.id));
         if (pending) return pending.id;
       }
     }
     return null;
-  }, [curriculum, completedIds]);
+  }, [displayCurriculum, completedIds]);
 
-  const continueLesson = curriculum.sections
-    .flatMap((s) => s.subSections)
-    .flatMap((sub) => sub.lessons)
-    .find((l) => l.id === firstPendingId);
+  const continueLesson = displayCurriculum
+    ? displayCurriculum.sections
+        .flatMap((s) => s.subSections)
+        .flatMap((sub) => sub.lessons)
+        .find((l) => l.id === firstPendingId)
+    : null;
+
+  if (!subject || !displayCurriculum) {
+    return <p className="text-text-muted">Fan topilmadi</p>;
+  }
 
   return (
     <div>
@@ -79,7 +175,7 @@ export default function SubjectRoadmapPage() {
       />
 
       <div className="space-y-6">
-        {curriculum.sections.map((section, si) => (
+        {displayCurriculum.sections.map((section, si) => (
           <Card key={section.id} delay={si * 0.05}>
             <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
               <span className="text-2xl">{subject.icon}</span>

@@ -5,6 +5,8 @@ import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { getAllLessons } from "@/lib/data/curriculum";
+import type { LessonContentOverride } from "@/lib/lesson-content";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { BookOpen, Lock, Play } from "lucide-react";
 import Link from "next/link";
@@ -26,15 +28,59 @@ const statusLabel = {
 
 export default function LessonsPage() {
   const [filter, setFilter] = useState<string>("all");
-  const [adminLessons, setAdminLessons] = useState<Array<ReturnType<typeof getAllLessons>[0]>>([]);
-  const allLessons = useMemo(() => [...getAllLessons(), ...adminLessons], [adminLessons]);
+  const [contentRows, setContentRows] = useState<LessonContentOverride[]>([]);
+  const allLessons = useMemo(() => {
+    const baseLessons = getAllLessons();
+    const baseIds = new Set(baseLessons.map((lesson) => lesson.id));
+    const overrides = new Map(contentRows.map((row) => [row.lesson_id, row]));
+    const mergedBase = baseLessons.map((lesson) => {
+      const override = overrides.get(lesson.id);
+      return override
+        ? {
+            ...lesson,
+            title: override.title || lesson.title,
+            order: override.order_index ?? lesson.order,
+          }
+        : lesson;
+    });
+    const customLessons = contentRows
+      .filter((row) => !baseIds.has(row.lesson_id))
+      .map((row) => ({
+        id: row.lesson_id,
+        title: row.title,
+        order: row.order_index ?? 999,
+        status: "available" as const,
+        subjectId: row.subject_id || "mathematics",
+        subjectName: row.subject_name || "Matematika",
+        sectionId: row.section_id || "",
+        sectionName: row.section_name || "",
+        subSectionId: row.sub_section_id || "",
+        subSectionName: row.sub_section_name || "",
+      }));
+    return [...mergedBase, ...customLessons].sort((a, b) => a.order - b.order);
+  }, [contentRows]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("tricore-admin-lessons");
-    if (!saved) return;
-    const items = JSON.parse(saved) as Array<ReturnType<typeof getAllLessons>[0]>;
-    const known = new Set(getAllLessons().map((l) => l.id));
-    setAdminLessons(items.filter((l) => !known.has(l.id)).map((l) => ({ ...l, status: "available" as const })));
+    const supabase = createClient();
+    const loadOverrides = async () => {
+      const { data } = await supabase.from("lesson_content").select("*");
+      setContentRows((data ?? []) as LessonContentOverride[]);
+    };
+    loadOverrides();
+    const channel = supabase
+      .channel("lesson-content-list")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "lesson_content" },
+        () => {
+          void loadOverrides();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const filtered =

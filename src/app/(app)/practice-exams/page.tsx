@@ -11,7 +11,7 @@ import {
   getSections,
   getSubSections,
 } from "@/lib/data/curriculum";
-import { XP_REWARDS, addXp, incrementDailyActivity } from "@/lib/learning/gamification";
+import { addXp, incrementDailyActivity } from "@/lib/learning/gamification";
 import { createClient } from "@/lib/supabase/client";
 import { CheckCircle, Clock, Database, Sparkles, Target } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -30,6 +30,15 @@ interface ExamQuestion {
   explanation: string;
 }
 
+function shuffleQuestions<T>(items: T[]) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 export default function PracticeExamsPage() {
   const { user, refreshProfile } = useAuth();
   const [subjectId, setSubjectId] = useState("physics");
@@ -42,6 +51,7 @@ export default function PracticeExamsPage() {
   const [examQuestions, setExamQuestions] = useState<ExamQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [result, setResult] = useState<{ score: number; correct: number; total: number } | null>(null);
+  const [examStartedAt, setExamStartedAt] = useState<number | null>(null);
   const supabase = useMemo(() => createClient(), []);
 
   const sections = useMemo(() => getSections(subjectId), [subjectId]);
@@ -113,10 +123,12 @@ export default function PracticeExamsPage() {
       .eq("subject_id", subjectId)
       .eq("section_id", effectiveSectionId);
     if (subSectionId !== "all") query = query.eq("sub_section_id", subSectionId);
-    const { data } = await query.limit(questionCount);
-    setExamQuestions((data ?? []) as unknown as ExamQuestion[]);
+    const { data } = await query;
+    const shuffled = shuffleQuestions((data ?? []) as unknown as ExamQuestion[]).slice(0, questionCount);
+    setExamQuestions(shuffled);
     setAnswers({});
     setResult(null);
+    setExamStartedAt(Date.now());
     setGenerating(false);
   };
 
@@ -125,6 +137,11 @@ export default function PracticeExamsPage() {
     const correct = examQuestions.filter((q) => answers[q.id] === q.correct_index).length;
     const total = examQuestions.length;
     const score = Math.round((correct / total) * 100);
+    const timeSpentMinutes = Math.max(
+      1,
+      Math.ceil((Date.now() - (examStartedAt ?? Date.now())) / 60000)
+    );
+    const xpEarned = correct * 5;
     await supabase.from("exam_results").insert({
       user_id: user.id,
       subject_id: subjectId,
@@ -133,10 +150,13 @@ export default function PracticeExamsPage() {
       score,
       total_questions: total,
       correct_answers: correct,
-      time_spent: Math.max(1, timeLimit),
+      time_spent: timeSpentMinutes,
     } as never);
-    await addXp(supabase, user.id, XP_REWARDS.practiceExam);
-    await incrementDailyActivity(supabase, user.id, { exams_taken: 1, time_spent_minutes: timeLimit });
+    await addXp(supabase, user.id, xpEarned);
+    await incrementDailyActivity(supabase, user.id, {
+      exams_taken: 1,
+      time_spent_minutes: timeSpentMinutes,
+    });
     await refreshProfile();
     setResult({ score, correct, total });
   };

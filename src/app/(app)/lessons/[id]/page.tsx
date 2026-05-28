@@ -5,13 +5,19 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Input";
 import { useAuth } from "@/contexts/AuthProvider";
-import type { LessonAdminData } from "@/lib/data/admin-lessons";
 import {
   getAdjacentLessonsInGroup,
   getLessonById,
   getLessonGroup,
 } from "@/lib/data/curriculum";
 import { getLessonHandbook } from "@/lib/data/handbook";
+import {
+  buildFormulaList,
+  buildHandbookFromOverride,
+  formatDuration,
+  getVideoInfo,
+  type LessonContentOverride,
+} from "@/lib/lesson-content";
 import { XP_REWARDS, addXp, incrementDailyActivity } from "@/lib/learning/gamification";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -19,22 +25,13 @@ import {
   BookMarked,
   Bookmark,
   Copy,
-  Pause,
-  Play,
   ScrollText,
-  SkipForward,
   StickyNote,
   Upload,
-  Volume2,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-
-const formulas = [
-  { name: "Asosiy formula", expr: "F = ma" },
-  { name: "Yordamchi", expr: "v = s / t" },
-];
 
 const tabs = [
   "Ma'lumotnoma",
@@ -51,48 +48,22 @@ export default function LessonDetailPage() {
   const { user, refreshProfile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const lessonId = params.id as string;
-  const baseMeta = getLessonById(lessonId);
-  const adminOverride =
-    typeof window === "undefined"
-      ? null
-      : ((JSON.parse(localStorage.getItem("tricore-admin-lessons") ?? "[]") as LessonAdminData[]).find(
-          (l) => l.id === lessonId
-        ) ?? null);
-  const meta = baseMeta
-    ? {
-        ...baseMeta,
-        lesson: {
-          ...baseMeta.lesson,
-          title: adminOverride?.title ?? baseMeta.lesson.title,
-        },
-      }
-    : adminOverride
-      ? {
-          lesson: {
-            id: adminOverride.id,
-            title: adminOverride.title,
-            order: adminOverride.order,
-            status: "available" as const,
-          },
-          subjectId: adminOverride.subjectId,
-          subjectName: adminOverride.subjectName,
-          sectionId: adminOverride.sectionId,
-          sectionName: adminOverride.sectionName,
-          subSectionId: adminOverride.subSectionId,
-          subSectionName: adminOverride.subSectionName,
-        }
-      : null;
+  const meta = getLessonById(lessonId);
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Ma'lumotnoma");
-  const [playing, setPlaying] = useState(false);
+  const [contentOverride, setContentOverride] = useState<LessonContentOverride | null>(null);
+  const [contentLoading, setContentLoading] = useState(true);
+  const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(true);
   const [busy, setBusy] = useState(false);
   const [miniExamBusy, setMiniExamBusy] = useState(false);
+  const [lessonStartedAt] = useState(() => Date.now());
+  const [miniExamStartedAt, setMiniExamStartedAt] = useState<number | null>(null);
   const [noteContent, setNoteContent] = useState(
     "# Dars qaydlari\n\n- Muhim punktlar\n- Misollar\n- Savollar"
   );
 
-  if (!meta) {
+  if (!meta && false) {
     return (
       <div>
         <Link href="/lessons" className="text-sm text-primary">
@@ -103,12 +74,95 @@ export default function LessonDetailPage() {
     );
   }
 
-  const { lesson, subjectName, sectionName, subSectionName } = meta;
-  const { previous, next } = getAdjacentLessonsInGroup(lesson.id);
-  const handbook = getLessonHandbook(lesson.id, lesson.title);
+  const effectiveMeta = meta
+    ? {
+        ...meta,
+        lesson: {
+          ...meta.lesson,
+          title: contentOverride?.title || meta.lesson.title,
+          order: contentOverride?.order_index ?? meta.lesson.order,
+        },
+      }
+    : contentOverride
+      ? {
+          lesson: {
+            id: contentOverride.lesson_id,
+            title: contentOverride.title,
+            order: contentOverride.order_index ?? 999,
+            status: "available" as const,
+          },
+          subjectId: contentOverride.subject_id || "",
+          subjectName: contentOverride.subject_name || "",
+          sectionId: contentOverride.section_id || "",
+          sectionName: contentOverride.section_name || "",
+          subSectionId: contentOverride.sub_section_id || "",
+          subSectionName: contentOverride.sub_section_name || "",
+        }
+      : null;
+  const lesson = effectiveMeta?.lesson;
+  const subjectName = effectiveMeta?.subjectName ?? "";
+  const sectionName = effectiveMeta?.sectionName ?? "";
+  const subSectionName = effectiveMeta?.subSectionName ?? "";
+  const { previous, next } = lesson
+    ? getAdjacentLessonsInGroup(lesson.id)
+    : { previous: null, next: null };
+  const handbook = lesson
+    ? buildHandbookFromOverride(
+        lesson.id,
+        getLessonHandbook(lesson.id, contentOverride?.title || lesson.title),
+        contentOverride
+      )
+    : { rules: [], terms: [] };
+  const formulas = buildFormulaList(contentOverride);
+  const effectiveTitle = contentOverride?.title || lesson?.title || "";
+  const videoUrl = contentOverride?.video_url || "";
+  const videoInfo = getVideoInfo(videoUrl);
+  const formattedDuration = formatDuration(videoDuration);
 
   useEffect(() => {
-    if (!user) return;
+    if (!lessonId) return;
+    const loadContent = async () => {
+      const { data } = await supabase
+        .from("lesson_content")
+        .select("*")
+        .eq("lesson_id", lessonId)
+        .maybeSingle();
+      setContentOverride((data as LessonContentOverride | null) ?? null);
+      setContentLoading(false);
+    };
+    loadContent();
+    const channel = supabase
+      .channel(`lesson-content-${lessonId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "lesson_content", filter: `lesson_id=eq.${lessonId}` },
+        () => loadContent()
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [lessonId, supabase]);
+
+  useEffect(() => {
+    if (!videoUrl) {
+      setVideoDuration(null);
+      return;
+    }
+    const loadDuration = async () => {
+      try {
+        const response = await fetch(`/api/video-metadata?url=${encodeURIComponent(videoUrl)}`);
+        const data = (await response.json()) as { durationSeconds?: number };
+        setVideoDuration(data.durationSeconds ?? null);
+      } catch {
+        setVideoDuration(null);
+      }
+    };
+    loadDuration();
+  }, [videoUrl]);
+
+  useEffect(() => {
+    if (!user || !lesson) return;
     const load = async () => {
       const { data } = await supabase
         .from("lesson_progress")
@@ -119,14 +173,15 @@ export default function LessonDetailPage() {
       setIsCompleted(completed.has(lesson.id));
 
       const all = getLessonGroup(lesson.id).map((l) => l.id);
-      const firstPending = all.find((id) => !completed.has(id)) ?? lesson.id;
+      const group = all.length ? all : [lesson.id];
+      const firstPending = group.find((id) => !completed.has(id)) ?? lesson.id;
       setIsUnlocked(completed.has(lesson.id) || firstPending === lesson.id);
     };
     load();
-  }, [lesson.id, previous, supabase, user]);
+  }, [lesson, supabase, user]);
 
   const markLessonCompleted = async () => {
-    if (!user || isCompleted || !isUnlocked) return;
+    if (!user || !effectiveMeta || !lesson || isCompleted || !isUnlocked) return;
     setBusy(true);
     const { data: existing } = await supabase
       .from("lesson_progress")
@@ -139,9 +194,9 @@ export default function LessonDetailPage() {
       {
         user_id: user.id,
         lesson_id: lesson.id,
-        subject_id: meta.subjectId,
-        section_id: meta.sectionId,
-        sub_section_id: meta.subSectionId,
+        subject_id: effectiveMeta.subjectId,
+        section_id: effectiveMeta.sectionId,
+        sub_section_id: effectiveMeta.subSectionId,
         status: "completed",
         progress_percent: 100,
         completed_at: new Date().toISOString(),
@@ -151,7 +206,10 @@ export default function LessonDetailPage() {
 
     if ((existing as { status?: string } | null)?.status !== "completed") {
       await addXp(supabase, user.id, XP_REWARDS.lessonComplete);
-      await incrementDailyActivity(supabase, user.id, { lessons_completed: 1 });
+      await incrementDailyActivity(supabase, user.id, {
+        lessons_completed: 1,
+        time_spent_minutes: Math.max(1, Math.ceil((Date.now() - lessonStartedAt) / 60000)),
+      });
     }
     await refreshProfile();
     setIsCompleted(true);
@@ -160,20 +218,27 @@ export default function LessonDetailPage() {
   };
 
   const submitMiniExam = async () => {
-    if (!user) return;
+    if (!user || !effectiveMeta || !lesson) return;
     setMiniExamBusy(true);
+    const timeSpentMinutes = Math.max(
+      1,
+      Math.ceil((Date.now() - (miniExamStartedAt ?? Date.now())) / 60000)
+    );
     await supabase.from("exam_results").insert({
       user_id: user.id,
-      subject_id: meta.subjectId,
-      section_id: meta.sectionId,
+      subject_id: effectiveMeta.subjectId,
+      section_id: effectiveMeta.sectionId,
       sub_section_id: lesson.id,
       score: 100,
       total_questions: 10,
       correct_answers: 10,
-      time_spent: 15,
+      time_spent: timeSpentMinutes,
     } as never);
     await addXp(supabase, user.id, XP_REWARDS.lessonExam);
-    await incrementDailyActivity(supabase, user.id, { exams_taken: 1 });
+    await incrementDailyActivity(supabase, user.id, {
+      exams_taken: 1,
+      time_spent_minutes: timeSpentMinutes,
+    });
     await refreshProfile();
     setMiniExamBusy(false);
   };
@@ -182,6 +247,19 @@ export default function LessonDetailPage() {
     "Ma'lumotnoma": BookMarked,
     Notes: StickyNote,
   };
+
+  if (!effectiveMeta || !lesson) {
+    return (
+      <div>
+        <Link href="/lessons" className="text-sm text-primary">
+          в†ђ Darslar
+        </Link>
+        <p className="mt-8 text-text-muted">
+          {contentLoading ? "Dars yuklanmoqda..." : "Dars topilmadi"}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -194,34 +272,50 @@ export default function LessonDetailPage() {
           <Card glass={false} className="overflow-hidden p-0">
             <div className="aspect-video bg-surface-elevated relative flex items-center justify-center">
               <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-accent/10" />
-              <button
-                type="button"
-                onClick={() => setPlaying(!playing)}
-                className="relative z-10 w-16 h-16 rounded-full bg-primary/90 flex items-center justify-center hover:scale-105 transition-transform shadow-xl shadow-primary/40"
-              >
-                {playing ? (
-                  <Pause className="w-7 h-7 text-white" />
-                ) : (
-                  <Play className="w-7 h-7 text-white ml-1" />
-                )}
-              </button>
+              {videoInfo.embedUrl ? (
+                <iframe
+                  src={videoInfo.embedUrl}
+                  className="relative z-10 w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  title={effectiveTitle}
+                />
+              ) : (
+                <div className="relative z-10 w-full h-full flex items-center justify-center text-sm text-text-muted">
+                  Video URL kiritilmagan
+                </div>
+              )}
               <span className="absolute bottom-4 left-4 text-sm text-text-muted">
-                {lesson.title} — 24:32
+                {effectiveTitle}{formattedDuration ? ` - ${formattedDuration}` : ""}
               </span>
             </div>
             <div className="p-4 flex flex-wrap items-center gap-3 border-t border-border">
-              <Button variant="ghost" size="sm">1x</Button>
-              <Button variant="ghost" size="sm">1.25x</Button>
-              <Button variant="ghost" size="sm">1.5x</Button>
-              <Button variant="ghost" size="sm"><SkipForward className="w-4 h-4" /></Button>
-              <Button variant="ghost" size="sm"><Volume2 className="w-4 h-4" /> CC</Button>
+              <Badge variant="accent">
+                {videoInfo.provider === "youtube"
+                  ? "YouTube"
+                  : videoInfo.provider === "odysee"
+                    ? "Odysee"
+                    : "Video"}
+              </Badge>
+              {formattedDuration && <Badge variant="muted">{formattedDuration}</Badge>}
+              {videoUrl && (
+                <a
+                  href={videoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm text-primary hover:underline"
+                >
+                  Original video
+                </a>
+              )}
               <div className="flex-1" />
               <Badge variant="accent">0% ko&apos;rildi</Badge>
             </div>
           </Card>
 
           <div>
-            <h1 className="text-2xl font-bold">{lesson.title}</h1>
+            <h1 className="text-2xl font-bold">{effectiveTitle}</h1>
             <p className="text-text-muted mt-1">
               {subjectName} · {sectionName} · {subSectionName}
             </p>
@@ -324,7 +418,19 @@ export default function LessonDetailPage() {
             {activeTab === "Mini Exam" && (
               <div className="text-center py-8">
                 <p className="text-text-muted mb-4">10 ta MCQ · 15 daqiqa</p>
-                <Button variant="primary" onClick={submitMiniExam} loading={miniExamBusy}>Mini imtihonni yakunlash</Button>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    if (!miniExamStartedAt) {
+                      setMiniExamStartedAt(Date.now());
+                      return;
+                    }
+                    submitMiniExam();
+                  }}
+                  loading={miniExamBusy}
+                >
+                  {miniExamStartedAt ? "Mini imtihonni yakunlash" : "Mini imtihonni boshlash"}
+                </Button>
               </div>
             )}
             {activeTab === "Homework" && (

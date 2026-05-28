@@ -6,21 +6,100 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Select, Textarea } from "@/components/ui/Input";
+import { useAuth } from "@/contexts/AuthProvider";
 import {
   getAdminLessonStats,
   getAdminLessons,
   type LessonAdminData,
 } from "@/lib/data/admin-lessons";
 import { curricula, getSections, getSubSections } from "@/lib/data/curriculum";
+import { toLessonContentOverride } from "@/lib/lesson-content";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { BookOpen, Layers, Pencil, Plus, Search, Video } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-const ADMIN_LESSONS_KEY = "tricore-admin-lessons";
+function mergeLessons(
+  baseLessons: LessonAdminData[],
+  overrides: Array<{
+    lesson_id: string;
+    title: string;
+    subject_id?: string;
+    subject_name?: string;
+    section_id?: string;
+    section_name?: string;
+    sub_section_id?: string;
+    sub_section_name?: string;
+    order_index?: number;
+    video_url: string;
+    handbook_rules: string;
+    handbook_terms: string;
+    formulas: string;
+    mini_exam_count: number;
+    homework_pdf: string;
+    homework_deadline: string;
+  }>
+) {
+  const baseById = new Map(baseLessons.map((lesson) => [lesson.id, lesson]));
+  const mergedBase = baseLessons.map((lesson) => {
+    const override = overrides.find((row) => row.lesson_id === lesson.id);
+    return override
+      ? {
+          ...lesson,
+          title: override.title,
+          subjectId: override.subject_id || lesson.subjectId,
+          subjectName: override.subject_name || lesson.subjectName,
+          sectionId: override.section_id || lesson.sectionId,
+          sectionName: override.section_name || lesson.sectionName,
+          subSectionId: override.sub_section_id || lesson.subSectionId,
+          subSectionName: override.sub_section_name || lesson.subSectionName,
+          order: override.order_index ?? lesson.order,
+          videoUrl: override.video_url,
+          handbookRules: override.handbook_rules,
+          handbookTerms: override.handbook_terms,
+          formulas: override.formulas,
+          miniExamCount: override.mini_exam_count,
+          homeworkPdf: override.homework_pdf,
+          homeworkDeadline: override.homework_deadline,
+        }
+      : lesson;
+  });
+
+  const extraLessons = overrides
+    .filter((row) => !baseById.has(row.lesson_id))
+    .map((row) => {
+      const localMatch = baseLessons.find((lesson) => lesson.id === row.lesson_id);
+      if (localMatch) return localMatch;
+      return {
+        id: row.lesson_id,
+        title: row.title,
+        subjectId: row.subject_id || "mathematics",
+        subjectName: row.subject_name || "Matematika",
+        sectionId: row.section_id || "",
+        sectionName: row.section_name || "",
+        subSectionId: row.sub_section_id || "",
+        subSectionName: row.sub_section_name || "",
+        order: row.order_index ?? 999,
+        videoUrl: row.video_url,
+        handbookRules: row.handbook_rules,
+        handbookTerms: row.handbook_terms,
+        formulas: row.formulas,
+        miniExamCount: row.mini_exam_count,
+        homeworkPdf: row.homework_pdf,
+        homeworkDeadline: row.homework_deadline,
+      } satisfies LessonAdminData;
+    });
+
+  return [...extraLessons, ...mergedBase];
+}
 
 export default function AdminContentPage() {
+  const { user } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
   const stats = getAdminLessonStats();
-  const [lessons, setLessons] = useState(getAdminLessons);
+  const [lessons, setLessons] = useState<LessonAdminData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saveError, setSaveError] = useState("");
   const [search, setSearch] = useState("");
   const [filterSubject, setFilterSubject] = useState("all");
   const [editing, setEditing] = useState<LessonAdminData | null>(null);
@@ -40,14 +119,64 @@ export default function AdminContentPage() {
     homeworkDeadline: "",
   });
 
-  useEffect(() => {
-    const saved = localStorage.getItem(ADMIN_LESSONS_KEY);
-    if (saved) setLessons(JSON.parse(saved) as LessonAdminData[]);
-  }, []);
+  const loadLessons = useCallback(async () => {
+    const { data, error } = await supabase.from("lesson_content").select("*");
+    if (error) {
+      setSaveError(error.message);
+      setLessons(getAdminLessons());
+      setLoading(false);
+      return;
+    }
+
+    const rows = (data ?? []) as Array<{
+      lesson_id: string;
+      title: string;
+      subject_id?: string;
+      subject_name?: string;
+      section_id?: string;
+      section_name?: string;
+      sub_section_id?: string;
+      sub_section_name?: string;
+      order_index?: number;
+      video_url: string;
+      handbook_rules: string;
+      handbook_terms: string;
+      formulas: string;
+      mini_exam_count: number;
+      homework_pdf: string;
+      homework_deadline: string;
+    }>;
+    setSaveError("");
+    setLessons(mergeLessons(getAdminLessons(), rows));
+    setLoading(false);
+  }, [supabase]);
 
   useEffect(() => {
-    localStorage.setItem(ADMIN_LESSONS_KEY, JSON.stringify(lessons));
-  }, [lessons]);
+    let active = true;
+
+    const load = async () => {
+      await loadLessons();
+      if (!active) return;
+    };
+
+    load();
+
+    const channel = supabase
+      .channel("admin-lesson-content")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "lesson_content" },
+        () => {
+          void loadLessons();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [loadLessons, supabase]);
 
   const sections = useMemo(
     () => getSections(newLesson.subjectId),
@@ -74,24 +203,45 @@ export default function AdminContentPage() {
     });
   }, [lessons, search, filterSubject]);
 
-  const handleSave = (data: LessonAdminData) => {
+  const handleSave = async (data: LessonAdminData) => {
+    setSaveError("");
     setLessons((prev) => prev.map((l) => (l.id === data.id ? data : l)));
+    if (!user) {
+      setSaveError("Admin session topilmadi. Qayta login qiling.");
+      await loadLessons();
+      return;
+    }
+    const { error } = await supabase.from("lesson_content").upsert(
+      {
+        ...toLessonContentOverride(data),
+        updated_by: user.id,
+      } as never,
+      { onConflict: "lesson_id" }
+    );
+    if (error) {
+      setSaveError(error.message);
+      await loadLessons();
+      return;
+    }
     setEditing(null);
   };
 
-  const handleAddLesson = () => {
+  const handleAddLesson = async () => {
+    setSaveError("");
     const subj = curricula.find((c) => c.id === newLesson.subjectId);
-    const sec = subj?.sections.find((s) => s.id === newLesson.sectionId);
-    const sub = sec?.subSections.find((s) => s.id === newLesson.subSectionId);
+    const effectiveSectionId = newLesson.sectionId || subj?.sections[0]?.id || "";
+    const sec = subj?.sections.find((s) => s.id === effectiveSectionId);
+    const effectiveSubSectionId = newLesson.subSectionId || sec?.subSections[0]?.id || "";
+    const sub = sec?.subSections.find((s) => s.id === effectiveSubSectionId);
     const id = `new-${Date.now()}`;
     const item: LessonAdminData = {
       id,
       title: newLesson.title || "Yangi dars",
       subjectId: newLesson.subjectId,
       subjectName: subj?.name ?? "",
-      sectionId: newLesson.sectionId,
+      sectionId: effectiveSectionId,
       sectionName: sec?.name ?? "",
-      subSectionId: newLesson.subSectionId,
+      subSectionId: effectiveSubSectionId,
       subSectionName: sub?.name ?? "",
       order: 999,
       videoUrl: newLesson.videoUrl,
@@ -103,6 +253,23 @@ export default function AdminContentPage() {
       homeworkDeadline: newLesson.homeworkDeadline,
     };
     setLessons((prev) => [item, ...prev]);
+    if (!user) {
+      setSaveError("Admin session topilmadi. Qayta login qiling.");
+      await loadLessons();
+      return;
+    }
+    const { error } = await supabase.from("lesson_content").upsert(
+      {
+        ...toLessonContentOverride(item),
+        updated_by: user.id,
+      } as never,
+      { onConflict: "lesson_id" }
+    );
+    if (error) {
+      setSaveError(error.message);
+      await loadLessons();
+      return;
+    }
     setShowAdd(false);
     setEditing(item);
   };
@@ -132,7 +299,7 @@ export default function AdminContentPage() {
         </Card>
         <Card>
           <Video className="w-7 h-7 text-secondary mb-2" />
-          <p className="text-2xl font-bold">{stats.lessons}</p>
+          <p className="text-2xl font-bold">{lessons.length || stats.lessons}</p>
           <p className="text-sm text-text-muted">Darslar</p>
         </Card>
       </div>
@@ -260,7 +427,18 @@ export default function AdminContentPage() {
         </div>
       </Card>
 
+      {saveError && (
+        <Card className="mb-6 border-danger/30">
+          <p className="text-sm text-danger">{saveError}</p>
+        </Card>
+      )}
+
       <div className="space-y-2">
+        {loading && (
+          <Card>
+            <p className="text-sm text-text-muted">Dars ma&apos;lumotlari yuklanmoqda...</p>
+          </Card>
+        )}
         {filtered.slice(0, 50).map((lesson) => (
           <Card key={lesson.id} hover className="!p-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">

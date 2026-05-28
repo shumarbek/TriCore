@@ -19,12 +19,24 @@ export function Header({ onMenuClick, title }: HeaderProps) {
   const supabase = useMemo(() => createClient(), []);
   const [openNotifications, setOpenNotifications] = useState(false);
   const [replies, setReplies] = useState<Array<{ id: string; subject: string; replied_at: string | null }>>([]);
+  const [openMessages, setOpenMessages] = useState<Array<{ id: string; subject: string; created_at: string }>>([]);
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
 
   const seenKey = user ? `tricore-seen-notifications-${user.id}` : "";
 
   const loadNotifications = useCallback(async () => {
     if (!user) return;
+    if (profile?.role === "admin") {
+      const { data } = await supabase
+        .from("messages")
+        .select("id, subject, created_at")
+        .eq("status", "open")
+        .order("created_at", { ascending: false })
+        .limit(10);
+      setOpenMessages((data ?? []) as Array<{ id: string; subject: string; created_at: string }>);
+      setReplies([]);
+      return;
+    }
     const { data } = await supabase
       .from("messages")
       .select("id, subject, replied_at")
@@ -33,7 +45,8 @@ export function Header({ onMenuClick, title }: HeaderProps) {
       .order("replied_at", { ascending: false })
       .limit(10);
     setReplies((data ?? []) as Array<{ id: string; subject: string; replied_at: string | null }>);
-  }, [supabase, user]);
+    setOpenMessages([]);
+  }, [profile?.role, supabase, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -44,7 +57,9 @@ export function Header({ onMenuClick, title }: HeaderProps) {
       .channel(`header-notifications-${user.id}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "messages", filter: `user_id=eq.${user.id}` },
+        profile?.role === "admin"
+          ? { event: "*", schema: "public", table: "messages" }
+          : { event: "UPDATE", schema: "public", table: "messages", filter: `user_id=eq.${user.id}` },
         () => loadNotifications()
       )
       .subscribe();
@@ -53,10 +68,13 @@ export function Header({ onMenuClick, title }: HeaderProps) {
     };
   }, [loadNotifications, seenKey, supabase, user]);
 
-  const unreadCount = useMemo(
-    () => replies.filter((r) => !seenIds.has(r.id)).length,
-    [replies, seenIds]
-  );
+  const unreadCount = useMemo(() => {
+    const ids =
+      profile?.role === "admin"
+        ? openMessages.map((m) => `admin-${m.id}`)
+        : replies.map((r) => `reply-${r.id}`);
+    return ids.filter((id) => !seenIds.has(id)).length;
+  }, [openMessages, profile?.role, replies, seenIds]);
 
   const initials = profile?.full_name
     ? profile.full_name
@@ -118,7 +136,11 @@ export function Header({ onMenuClick, title }: HeaderProps) {
             onClick={() => {
               setOpenNotifications((v) => !v);
               if (user) {
-                const next = new Set([...seenIds, ...replies.map((r) => r.id)]);
+                const notificationIds =
+                  profile?.role === "admin"
+                    ? openMessages.map((m) => `admin-${m.id}`)
+                    : replies.map((r) => `reply-${r.id}`);
+                const next = new Set([...seenIds, ...notificationIds]);
                 setSeenIds(next);
                 localStorage.setItem(seenKey, JSON.stringify([...next]));
               }
@@ -134,7 +156,19 @@ export function Header({ onMenuClick, title }: HeaderProps) {
           {openNotifications && (
             <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface shadow-xl z-50 p-2">
               <p className="px-2 py-1 text-xs font-semibold text-text-muted">Bildirishnomalar</p>
-              {replies.length === 0 ? (
+              {profile?.role === "admin" && openMessages.length > 0 ? (
+                openMessages.map((m) => (
+                  <Link
+                    key={m.id}
+                    href="/admin/messages"
+                    className="block rounded-lg px-2 py-2 hover:bg-surface-elevated"
+                    onClick={() => setOpenNotifications(false)}
+                  >
+                    <p className="text-sm font-medium truncate">Yangi support xabar: {m.subject}</p>
+                    <p className="text-xs text-text-muted">{new Date(m.created_at).toLocaleString()}</p>
+                  </Link>
+                ))
+              ) : replies.length === 0 ? (
                 <p className="px-2 py-4 text-sm text-text-muted">Yangi bildirishnoma yo&apos;q.</p>
               ) : (
                 replies.map((r) => (

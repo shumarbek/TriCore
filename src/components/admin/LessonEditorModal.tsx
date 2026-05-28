@@ -6,7 +6,7 @@ import type { LessonAdminData } from "@/lib/data/admin-lessons";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { BookMarked, FileText, Target, Video, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const editorTabs = [
   { id: "basic", label: "Asosiy", icon: Video },
@@ -25,6 +25,11 @@ interface LessonEditorModalProps {
 export function LessonEditorModal({ lesson, onClose, onSave }: LessonEditorModalProps) {
   const [tab, setTab] = useState<(typeof editorTabs)[number]["id"]>("basic");
   const [form, setForm] = useState<LessonAdminData | null>(lesson);
+
+  useEffect(() => {
+    setForm(lesson);
+    setTab("basic");
+  }, [lesson]);
 
   if (!lesson || !form) return null;
 
