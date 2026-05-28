@@ -11,8 +11,15 @@ import { createClient } from "@/lib/supabase/client";
 import { AlertTriangle, Bot, CheckCircle, Eye, EyeOff, Key, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 
+type AIConfigRow = {
+  id: string;
+  api_key: string;
+  model: string;
+  platform_context: string;
+};
+
 export default function AdminAISettingsPage() {
-  const { config, updateConfig, isConfigured } = useAIConfig();
+  const { config, updateConfig, refreshConfig, isConfigured } = useAIConfig();
   const { user } = useAuth();
   const [apiKey, setApiKey] = useState(config.apiKey);
   const [model, setModel] = useState(config.model);
@@ -36,21 +43,21 @@ export default function AdminAISettingsPage() {
         .select("*")
         .order("updated_at", { ascending: false })
         .limit(1)
-        .single();
-      if (data) {
-        setApiKey(data.api_key);
-        setModel(data.model);
-        setContext(data.platform_context);
+        .maybeSingle();
+      const row = data as AIConfigRow | null;
+      if (row) {
+        setApiKey(row.api_key);
+        setModel(row.model);
+        setContext(row.platform_context);
       }
     };
     load();
   }, []);
 
   const handleSave = async () => {
-    // localStorage ga saqlash (fallback)
     updateConfig({
       apiKey: apiKey.trim(),
-      model: model.trim() || "gpt-4o-mini",
+      model: model.trim() || "gemini-2.5-flash",
       platformContext: context,
     });
 
@@ -59,7 +66,7 @@ export default function AdminAISettingsPage() {
       const supabase = createClient();
       const payload = {
         api_key: apiKey.trim(),
-        model: model.trim() || "gpt-4o-mini",
+        model: model.trim() || "gemini-2.5-flash",
         platform_context: context,
         updated_by: user.id,
         updated_at: new Date().toISOString(),
@@ -69,14 +76,16 @@ export default function AdminAISettingsPage() {
         .from("ai_config")
         .select("id")
         .limit(1)
-        .single();
-      if (existing) {
-        await supabase.from("ai_config").update(payload).eq("id", existing.id);
+        .maybeSingle();
+      const row = existing as Pick<AIConfigRow, "id"> | null;
+      if (row) {
+        await supabase.from("ai_config").update(payload as never).eq("id", row.id);
       } else {
-        await supabase.from("ai_config").insert(payload);
+        await supabase.from("ai_config").insert(payload as never);
       }
     }
 
+    await refreshConfig();
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -85,7 +94,7 @@ export default function AdminAISettingsPage() {
     <div className="max-w-3xl">
             <PageHeader
         title="AI Settings"
-        description="OpenAI API kaliti va platforma context — AI userlarga platforma bo'yicha javob beradi"
+        description="Google AI Studio Gemini API kaliti va platforma context"
       />
 
       <Card className="mb-6">
@@ -104,7 +113,7 @@ export default function AdminAISettingsPage() {
               <AlertTriangle className="w-5 h-5 text-warning" />
               <div>
                 <p className="text-sm font-medium text-warning">AI sozlanmagan</p>
-                <p className="text-xs text-text-muted">Haqiqiy OpenAI API kalitni kiriting — foydalanuvchilar AI Assistant ishlatishi uchun</p>
+                <p className="text-xs text-text-muted">Google AI Studio'dan olingan Gemini API key kiriting</p>
               </div>
               <Badge variant="warning" className="ml-auto">Inactive</Badge>
             </>
@@ -120,14 +129,14 @@ export default function AdminAISettingsPage() {
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium text-text-muted mb-1.5 block">
-              OpenAI API Key
+              Gemini API Key
             </label>
             <div className="flex gap-2">
               <Input
                 type={showKey ? "text" : "password"}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-..."
+                placeholder="AIza..."
                 className="flex-1 font-mono"
               />
               <Button variant="ghost" onClick={() => setShowKey(!showKey)}>
@@ -139,7 +148,7 @@ export default function AdminAISettingsPage() {
             label="Model"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="gpt-4o-mini"
+            placeholder="gemini-2.5-flash"
           />
         </div>
       </Card>
@@ -166,8 +175,7 @@ export default function AdminAISettingsPage() {
       </Button>
 
             <p className="text-xs text-text-muted mt-4">
-        Oxirgi yangilanish: {config.updatedAt}. API kalit localStorage da saqlanadi.
-        Productionda API kalitini server environment variable orqali saqlang.
+        Oxirgi yangilanish: {config.updatedAt}. API kalit Supabase ai_config jadvalida saqlanadi.
       </p>
     </div>
   );

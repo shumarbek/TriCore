@@ -113,7 +113,7 @@ create table if not exists public.notes (
 create table if not exists public.ai_config (
   id uuid default gen_random_uuid() primary key,
   api_key text not null default '',
-  model text not null default 'gpt-4o-mini',
+  model text not null default 'gemini-2.5-flash',
   platform_context text not null default '',
   updated_by uuid references public.profiles(id) not null,
   updated_at timestamptz not null default now()
@@ -257,6 +257,7 @@ create policy "Admin can delete lesson content" on public.lesson_content for del
 alter publication supabase_realtime add table public.profiles;
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.lesson_content;
+alter publication supabase_realtime add table public.ai_config;
 
 -- ============================================
 -- INDEXES

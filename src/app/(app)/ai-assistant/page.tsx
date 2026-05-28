@@ -56,7 +56,7 @@ export default function AIAssistantPage() {
           {
             role: "assistant",
             content:
-              "AI hozircha sozlanmagan. Admin paneldan AI Settings bo'limiga o'ting va OpenAI API kalitini kiriting.",
+              "AI hozircha sozlanmagan. Admin paneldan AI Settings bo'limiga o'ting va Google AI Studio Gemini API key kiriting.",
           },
         ]);
         setInput("");
