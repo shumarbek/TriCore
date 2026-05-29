@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAuth } from "@/contexts/AuthProvider";
-import { getCurriculum } from "@/lib/data/curriculum";
 import type { SubjectCurriculum } from "@/lib/data/curriculum";
+import { buildRuntimeCurricula, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
 import { subjects } from "@/lib/data/navigation";
 import type { LessonContentOverride } from "@/lib/lesson-content";
 import { createClient } from "@/lib/supabase/client";
@@ -28,64 +28,23 @@ export default function SubjectRoadmapPage() {
   const subjectId = params.subject as string;
   const { user } = useAuth();
   const subject = subjects.find((s) => s.id === subjectId);
-  const curriculum = getCurriculum(subjectId);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const supabase = useMemo(() => createClient(), []);
   const [contentRows, setContentRows] = useState<LessonContentOverride[]>([]);
+  const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
 
   const displayCurriculum = useMemo<SubjectCurriculum | null>(() => {
-    if (!curriculum) return null;
-    const baseIds = new Set(
-      curriculum.sections.flatMap((section) =>
-        section.subSections.flatMap((sub) => sub.lessons.map((lesson) => lesson.id))
-      )
-    );
-    const overrides = new Map(contentRows.map((row) => [row.lesson_id, row]));
-
-    const sections = curriculum.sections.map((section) => ({
-      ...section,
-      subSections: section.subSections.map((sub) => {
-        const mergedBase = sub.lessons.map((lesson) => {
-          const override = overrides.get(lesson.id);
-          return override
-            ? {
-                ...lesson,
-                title: override.title || lesson.title,
-                order: override.order_index ?? lesson.order,
-              }
-            : lesson;
-        });
-        const customLessons = contentRows
-          .filter(
-            (row) =>
-              !baseIds.has(row.lesson_id) &&
-              row.subject_id === subjectId &&
-              row.section_id === section.id &&
-              row.sub_section_id === sub.id
-          )
-          .map((row) => ({
-            id: row.lesson_id,
-            title: row.title,
-            order: row.order_index ?? 999,
-            status: "available" as const,
-          }));
-
-        return {
-          ...sub,
-          lessons: [...mergedBase, ...customLessons].sort((a, b) => a.order - b.order),
-        };
-      }),
-    }));
-
-    return { ...curriculum, sections };
-  }, [contentRows, curriculum, subjectId]);
+    return buildRuntimeCurricula(structureRows, contentRows).find((item) => item.id === subjectId) ?? null;
+  }, [contentRows, structureRows, subjectId]);
 
   useEffect(() => {
-    if (!curriculum) return;
-
-    const loadTitles = async () => {
-      const { data } = await supabase.from("lesson_content").select("*");
-      setContentRows((data ?? []) as LessonContentOverride[]);
+    const loadCurriculum = async () => {
+      const [{ data: lessonData }, { data: structureData }] = await Promise.all([
+        supabase.from("lesson_content").select("*"),
+        supabase.from("curriculum_structure").select("*").order("order_index", { ascending: true }),
+      ]);
+      setContentRows((lessonData ?? []) as LessonContentOverride[]);
+      setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
     };
 
     const loadProgress = async () => {
@@ -100,7 +59,7 @@ export default function SubjectRoadmapPage() {
       setCompletedIds(done);
     };
 
-    void loadTitles();
+    void loadCurriculum();
     void loadProgress();
 
     const channels = [
@@ -110,7 +69,17 @@ export default function SubjectRoadmapPage() {
           "postgres_changes",
           { event: "*", schema: "public", table: "lesson_content" },
           () => {
-            void loadTitles();
+            void loadCurriculum();
+          }
+        )
+        .subscribe(),
+      supabase
+        .channel(`curriculum-structure-subject-${subjectId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "curriculum_structure" },
+          () => {
+            void loadCurriculum();
           }
         )
         .subscribe(),
@@ -136,7 +105,7 @@ export default function SubjectRoadmapPage() {
         supabase.removeChannel(channel);
       });
     };
-  }, [curriculum, subjectId, supabase, user]);
+  }, [subjectId, supabase, user]);
 
   const firstPendingId = useMemo(() => {
     if (!displayCurriculum) return null;

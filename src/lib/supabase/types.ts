@@ -209,6 +209,35 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["ai_usage"]["Insert"]>;
       };
+      curriculum_structure: {
+        Row: {
+          id: string;
+          node_id: string;
+          node_type: "section" | "sub_section";
+          subject_id: string;
+          parent_section_id: string;
+          name: string;
+          order_index: number;
+          is_deleted: boolean;
+          updated_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          node_id: string;
+          node_type: "section" | "sub_section";
+          subject_id: string;
+          parent_section_id?: string;
+          name: string;
+          order_index?: number;
+          is_deleted?: boolean;
+          updated_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["curriculum_structure"]["Insert"]>;
+      };
       daily_activity: {
         Row: {
           id: string;

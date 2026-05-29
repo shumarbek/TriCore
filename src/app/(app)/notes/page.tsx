@@ -19,6 +19,10 @@ interface Note {
   updated_at: string;
 }
 
+type NoteRow = Note & {
+  user_id: string;
+};
+
 export default function NotesPage() {
   const { user } = useAuth();
   const supabase = createClient();
@@ -34,9 +38,12 @@ export default function NotesPage() {
       .select("*")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false });
-    if (data) {
-      setNotes(data as Note[]);
-      if (!selected && data.length > 0) setSelected(data[0].id);
+    const rows = (data ?? []) as NoteRow[];
+    if (rows.length > 0) {
+      setNotes(rows);
+      if (!selected) setSelected(rows[0].id);
+    } else {
+      setNotes([]);
     }
   }, [supabase, user, selected]);
 
@@ -54,12 +61,13 @@ export default function NotesPage() {
     if (!user) return;
     const { data } = await supabase
       .from("notes")
-      .insert({ user_id: user.id, title: "Yangi qayd", content: "" })
+      .insert({ user_id: user.id, title: "Yangi qayd", content: "" } as never)
       .select()
       .single();
-    if (data) {
-      setNotes((prev) => [data as Note, ...prev]);
-      setSelected(data.id);
+    const row = data as NoteRow | null;
+    if (row) {
+      setNotes((prev) => [row, ...prev]);
+      setSelected(row.id);
     }
   };
 
@@ -74,7 +82,7 @@ export default function NotesPage() {
       saveTimerRef.current = setTimeout(async () => {
         await supabase
           .from("notes")
-          .update({ [field]: value, updated_at: new Date().toISOString() })
+          .update({ [field]: value, updated_at: new Date().toISOString() } as never)
           .eq("id", current.id);
       }, 800);
     },

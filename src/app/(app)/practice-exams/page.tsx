@@ -6,11 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Select } from "@/components/ui/Input";
 import { useAuth } from "@/contexts/AuthProvider";
-import {
-  getExamScopeLabel,
-  getSections,
-  getSubSections,
-} from "@/lib/data/curriculum";
+import { buildRuntimeCurricula, getRuntimeExamScopeLabel, getRuntimeSections, getRuntimeSubSections, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
 import { addXp, incrementDailyActivity } from "@/lib/learning/gamification";
 import { createClient } from "@/lib/supabase/client";
 import { CheckCircle, Clock, Database, Sparkles, Target } from "lucide-react";
@@ -52,9 +48,32 @@ export default function PracticeExamsPage() {
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [result, setResult] = useState<{ score: number; correct: number; total: number } | null>(null);
   const [examStartedAt, setExamStartedAt] = useState<number | null>(null);
+  const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
   const supabase = useMemo(() => createClient(), []);
+  const runtimeCurricula = useMemo(() => buildRuntimeCurricula(structureRows), [structureRows]);
 
-  const sections = useMemo(() => getSections(subjectId), [subjectId]);
+  useEffect(() => {
+    const loadStructure = async () => {
+      const { data } = await supabase.from("curriculum_structure").select("*").order("order_index", { ascending: true });
+      setStructureRows((data ?? []) as CurriculumStructureNode[]);
+    };
+    void loadStructure();
+    const channel = supabase
+      .channel("practice-curriculum-structure")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "curriculum_structure" },
+        () => {
+          void loadStructure();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase]);
+
+  const sections = useMemo(() => getRuntimeSections(runtimeCurricula, subjectId), [runtimeCurricula, subjectId]);
 
   useEffect(() => {
     if (sections.length && !sections.some((s) => s.id === sectionId)) {
@@ -66,8 +85,8 @@ export default function PracticeExamsPage() {
   const effectiveSectionId = sectionId || sections[0]?.id || "";
 
   const subSections = useMemo(
-    () => getSubSections(subjectId, effectiveSectionId),
-    [subjectId, effectiveSectionId]
+    () => getRuntimeSubSections(runtimeCurricula, subjectId, effectiveSectionId),
+    [runtimeCurricula, subjectId, effectiveSectionId]
   );
 
   const subSectionOptions = useMemo(
@@ -95,15 +114,13 @@ export default function PracticeExamsPage() {
 
   const scopeLabel = useMemo(
     () =>
-      effectiveSectionId
-        ? getExamScopeLabel(subjectId, effectiveSectionId, subSectionId)
-        : "",
-    [subjectId, effectiveSectionId, subSectionId]
+      effectiveSectionId ? getRuntimeExamScopeLabel(runtimeCurricula, subjectId, effectiveSectionId, subSectionId) : "",
+    [runtimeCurricula, subjectId, effectiveSectionId, subSectionId]
   );
 
   const handleSubjectChange = (id: string) => {
     setSubjectId(id);
-    const nextSections = getSections(id);
+    const nextSections = getRuntimeSections(runtimeCurricula, id);
     const first = nextSections[0]?.id ?? "";
     setSectionId(first);
     setSubSectionId("all");

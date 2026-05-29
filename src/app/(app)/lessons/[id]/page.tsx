@@ -6,10 +6,14 @@ import { Card } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Input";
 import { useAuth } from "@/contexts/AuthProvider";
 import {
-  getAdjacentLessonsInGroup,
-  getLessonById,
-  getLessonGroup,
+  type SubjectCurriculum,
 } from "@/lib/data/curriculum";
+import {
+  buildRuntimeCurricula,
+  findRuntimeLessonById,
+  getRuntimeLessonGroup,
+  type CurriculumStructureNode,
+} from "@/lib/data/curriculum/runtime";
 import { getLessonHandbook } from "@/lib/data/handbook";
 import {
   buildFormulaList,
@@ -25,9 +29,9 @@ import {
   BookMarked,
   Bookmark,
   Copy,
+  Download,
   ScrollText,
   StickyNote,
-  Upload,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -48,9 +52,10 @@ export default function LessonDetailPage() {
   const { user, refreshProfile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const lessonId = params.id as string;
-  const meta = getLessonById(lessonId);
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Ma'lumotnoma");
   const [contentOverride, setContentOverride] = useState<LessonContentOverride | null>(null);
+  const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
+  const [allLessonRows, setAllLessonRows] = useState<LessonContentOverride[]>([]);
   const [contentLoading, setContentLoading] = useState(true);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -63,7 +68,7 @@ export default function LessonDetailPage() {
     "# Dars qaydlari\n\n- Muhim punktlar\n- Misollar\n- Savollar"
   );
 
-  if (!meta && false) {
+  if (false) {
     return (
       <div>
         <Link href="/lessons" className="text-sm text-primary">
@@ -74,38 +79,19 @@ export default function LessonDetailPage() {
     );
   }
 
-  const effectiveMeta = meta
-    ? {
-        ...meta,
-        lesson: {
-          ...meta.lesson,
-          title: contentOverride?.title || meta.lesson.title,
-          order: contentOverride?.order_index ?? meta.lesson.order,
-        },
-      }
-    : contentOverride
-      ? {
-          lesson: {
-            id: contentOverride.lesson_id,
-            title: contentOverride.title,
-            order: contentOverride.order_index ?? 999,
-            status: "available" as const,
-          },
-          subjectId: contentOverride.subject_id || "",
-          subjectName: contentOverride.subject_name || "",
-          sectionId: contentOverride.section_id || "",
-          sectionName: contentOverride.section_name || "",
-          subSectionId: contentOverride.sub_section_id || "",
-          subSectionName: contentOverride.sub_section_name || "",
-        }
-      : null;
+  const runtimeCurricula = useMemo<SubjectCurriculum[]>(
+    () => buildRuntimeCurricula(structureRows, allLessonRows),
+    [allLessonRows, structureRows]
+  );
+  const effectiveMeta = findRuntimeLessonById(runtimeCurricula, lessonId);
   const lesson = effectiveMeta?.lesson;
   const subjectName = effectiveMeta?.subjectName ?? "";
   const sectionName = effectiveMeta?.sectionName ?? "";
   const subSectionName = effectiveMeta?.subSectionName ?? "";
-  const { previous, next } = lesson
-    ? getAdjacentLessonsInGroup(lesson.id)
-    : { previous: null, next: null };
+  const lessonGroup = lesson ? getRuntimeLessonGroup(runtimeCurricula, lesson.id) : [];
+  const lessonIndex = lessonGroup.findIndex((item) => item.id === lesson?.id);
+  const previous = lessonIndex > 0 ? lessonGroup[lessonIndex - 1] : null;
+  const next = lessonIndex >= 0 && lessonIndex < lessonGroup.length - 1 ? lessonGroup[lessonIndex + 1] : null;
   const handbook = lesson
     ? buildHandbookFromOverride(
         lesson.id,
@@ -116,22 +102,29 @@ export default function LessonDetailPage() {
   const formulas = buildFormulaList(contentOverride);
   const effectiveTitle = contentOverride?.title || lesson?.title || "";
   const videoUrl = contentOverride?.video_url || "";
+  const homeworkUrl = contentOverride?.homework_pdf || "";
   const videoInfo = getVideoInfo(videoUrl);
   const formattedDuration = formatDuration(videoDuration);
 
   useEffect(() => {
     if (!lessonId) return;
     const loadContent = async () => {
-      const { data } = await supabase
-        .from("lesson_content")
-        .select("*")
-        .eq("lesson_id", lessonId)
-        .maybeSingle();
+      const [{ data }, { data: lessonData }, { data: structureData }] = await Promise.all([
+        supabase
+          .from("lesson_content")
+          .select("*")
+          .eq("lesson_id", lessonId)
+          .maybeSingle(),
+        supabase.from("lesson_content").select("*"),
+        supabase.from("curriculum_structure").select("*").order("order_index", { ascending: true }),
+      ]);
       setContentOverride((data as LessonContentOverride | null) ?? null);
+      setAllLessonRows((lessonData ?? []) as LessonContentOverride[]);
+      setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
       setContentLoading(false);
     };
     loadContent();
-    const channel = supabase
+    const lessonChannel = supabase
       .channel(`lesson-content-${lessonId}`)
       .on(
         "postgres_changes",
@@ -139,8 +132,17 @@ export default function LessonDetailPage() {
         () => loadContent()
       )
       .subscribe();
+    const structureChannel = supabase
+      .channel(`lesson-structure-${lessonId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "curriculum_structure" },
+        () => loadContent()
+      )
+      .subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(lessonChannel);
+      supabase.removeChannel(structureChannel);
     };
   }, [lessonId, supabase]);
 
@@ -172,13 +174,13 @@ export default function LessonDetailPage() {
       const completed = new Set(rows.filter((x) => x.status === "completed").map((x) => x.lesson_id));
       setIsCompleted(completed.has(lesson.id));
 
-      const all = getLessonGroup(lesson.id).map((l) => l.id);
+      const all = lessonGroup.map((l) => l.id);
       const group = all.length ? all : [lesson.id];
       const firstPending = group.find((id) => !completed.has(id)) ?? lesson.id;
       setIsUnlocked(completed.has(lesson.id) || firstPending === lesson.id);
     };
     load();
-  }, [lesson, supabase, user]);
+  }, [lesson, lessonGroup, supabase, user]);
 
   const markLessonCompleted = async () => {
     if (!user || !effectiveMeta || !lesson || isCompleted || !isUnlocked) return;
@@ -442,11 +444,15 @@ export default function LessonDetailPage() {
                   </Link>{" "}
                   bo&apos;limida ham chiqadi.
                 </p>
-                <Button variant="outline">PDF yuklab olish</Button>
-                <div className="border-2 border-dashed border-border rounded-xl p-8 text-center">
-                  <Upload className="w-8 h-8 mx-auto text-text-muted mb-2" />
-                  <p className="text-sm text-text-muted">Javob faylini yuklang</p>
-                </div>
+                {homeworkUrl ? (
+                  <a href={homeworkUrl} download target="_blank" rel="noreferrer">
+                    <Button variant="outline">
+                      <Download className="w-4 h-4" /> Homework faylini yuklab olish
+                    </Button>
+                  </a>
+                ) : (
+                  <p className="text-sm text-text-muted">Homework link kiritilmagan.</p>
+                )}
               </div>
             )}
             {activeTab === "Discussion" && (

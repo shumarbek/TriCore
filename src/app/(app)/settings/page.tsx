@@ -24,7 +24,7 @@ export default function SettingsPage() {
     const supabase = createClient();
     await supabase
       .from("profiles")
-      .update({ full_name: fullName, username })
+      .update({ full_name: fullName, username } as never)
       .eq("id", user.id);
     await refreshProfile();
     setSaving(false);

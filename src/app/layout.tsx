@@ -2,18 +2,8 @@ import { AIConfigProvider } from "@/contexts/AIConfigProvider";
 import { AuthProvider } from "@/contexts/AuthProvider";
 import { ThemeProvider } from "@/contexts/ThemeProvider";
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { CSSProperties } from "react";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "TriCore — AI-Powered STEM Learning Platform",
@@ -29,7 +19,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning data-theme="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
+        className="antialiased min-h-screen"
+        style={
+          {
+            "--font-geist-sans": '"Segoe UI", system-ui, sans-serif',
+            "--font-geist-mono": '"Cascadia Code", "SFMono-Regular", Consolas, monospace',
+          } as CSSProperties
+        }
       >
         <ThemeProvider>
           <AuthProvider>

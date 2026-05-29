@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { getAllLessons } from "@/lib/data/curriculum";
+import { buildRuntimeCurricula, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
 import type { LessonContentOverride } from "@/lib/lesson-content";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -29,45 +29,37 @@ const statusLabel = {
 export default function LessonsPage() {
   const [filter, setFilter] = useState<string>("all");
   const [contentRows, setContentRows] = useState<LessonContentOverride[]>([]);
+  const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
   const allLessons = useMemo(() => {
-    const baseLessons = getAllLessons();
-    const baseIds = new Set(baseLessons.map((lesson) => lesson.id));
-    const overrides = new Map(contentRows.map((row) => [row.lesson_id, row]));
-    const mergedBase = baseLessons.map((lesson) => {
-      const override = overrides.get(lesson.id);
-      return override
-        ? {
+    return buildRuntimeCurricula(structureRows, contentRows).flatMap((subject) =>
+      subject.sections.flatMap((section) =>
+        section.subSections.flatMap((subSection) =>
+          subSection.lessons.map((lesson) => ({
             ...lesson,
-            title: override.title || lesson.title,
-            order: override.order_index ?? lesson.order,
-          }
-        : lesson;
-    });
-    const customLessons = contentRows
-      .filter((row) => !baseIds.has(row.lesson_id))
-      .map((row) => ({
-        id: row.lesson_id,
-        title: row.title,
-        order: row.order_index ?? 999,
-        status: "available" as const,
-        subjectId: row.subject_id || "mathematics",
-        subjectName: row.subject_name || "Matematika",
-        sectionId: row.section_id || "",
-        sectionName: row.section_name || "",
-        subSectionId: row.sub_section_id || "",
-        subSectionName: row.sub_section_name || "",
-      }));
-    return [...mergedBase, ...customLessons].sort((a, b) => a.order - b.order);
-  }, [contentRows]);
+            subjectId: subject.id,
+            subjectName: subject.name,
+            sectionId: section.id,
+            sectionName: section.name,
+            subSectionId: subSection.id,
+            subSectionName: subSection.name,
+          }))
+        )
+      )
+    );
+  }, [contentRows, structureRows]);
 
   useEffect(() => {
     const supabase = createClient();
     const loadOverrides = async () => {
-      const { data } = await supabase.from("lesson_content").select("*");
-      setContentRows((data ?? []) as LessonContentOverride[]);
+      const [{ data: lessonData }, { data: structureData }] = await Promise.all([
+        supabase.from("lesson_content").select("*"),
+        supabase.from("curriculum_structure").select("*").order("order_index", { ascending: true }),
+      ]);
+      setContentRows((lessonData ?? []) as LessonContentOverride[]);
+      setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
     };
     loadOverrides();
-    const channel = supabase
+    const lessonChannel = supabase
       .channel("lesson-content-list")
       .on(
         "postgres_changes",
@@ -77,9 +69,20 @@ export default function LessonsPage() {
         }
       )
       .subscribe();
+    const structureChannel = supabase
+      .channel("lesson-structure-list")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "curriculum_structure" },
+        () => {
+          void loadOverrides();
+        }
+      )
+      .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(lessonChannel);
+      supabase.removeChannel(structureChannel);
     };
   }, []);
 

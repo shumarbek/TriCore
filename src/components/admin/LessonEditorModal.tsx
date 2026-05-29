@@ -5,7 +5,7 @@ import { Input, Textarea } from "@/components/ui/Input";
 import type { LessonAdminData } from "@/lib/data/admin-lessons";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
-import { BookMarked, FileText, Target, Video, X } from "lucide-react";
+import { BookMarked, FileText, Trash2, Target, Video, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 const editorTabs = [
@@ -20,15 +20,18 @@ interface LessonEditorModalProps {
   lesson: LessonAdminData | null;
   onClose: () => void;
   onSave: (data: LessonAdminData) => void;
+  onDelete?: (lesson: LessonAdminData) => void;
 }
 
-export function LessonEditorModal({ lesson, onClose, onSave }: LessonEditorModalProps) {
+export function LessonEditorModal({ lesson, onClose, onSave, onDelete }: LessonEditorModalProps) {
   const [tab, setTab] = useState<(typeof editorTabs)[number]["id"]>("basic");
   const [form, setForm] = useState<LessonAdminData | null>(lesson);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     setForm(lesson);
     setTab("basic");
+    setConfirmDelete(false);
   }, [lesson]);
 
   if (!lesson || !form) return null;
@@ -132,23 +135,35 @@ export function LessonEditorModal({ lesson, onClose, onSave }: LessonEditorModal
             {tab === "homework" && (
               <>
                 <Input
-                  label="Homework PDF"
+                  label="Homework link"
                   value={form.homeworkPdf}
                   onChange={(e) => update({ homeworkPdf: e.target.value })}
-                />
-                <Input
-                  label="Muddat"
-                  type="date"
-                  value={form.homeworkDeadline}
-                  onChange={(e) => update({ homeworkDeadline: e.target.value })}
+                  placeholder="https://... yoki fayl manzili"
                 />
               </>
             )}
           </div>
 
-          <div className="p-5 border-t border-border flex justify-end gap-2">
+          <div className="p-5 border-t border-border flex flex-col sm:flex-row sm:justify-between gap-2">
+            {onDelete && (
+              <Button
+                variant="danger"
+                onClick={() => {
+                  if (!confirmDelete) {
+                    setConfirmDelete(true);
+                    return;
+                  }
+                  onDelete(form);
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+                {confirmDelete ? "Tasdiqlash: o'chirish" : "Darsni o'chirish"}
+              </Button>
+            )}
+            <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose}>Bekor</Button>
             <Button variant="primary" onClick={() => onSave(form)}>Saqlash</Button>
+            </div>
           </div>
         </motion.div>
       </motion.div>

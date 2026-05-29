@@ -12,12 +12,39 @@ import {
   getAdminLessons,
   type LessonAdminData,
 } from "@/lib/data/admin-lessons";
-import { curricula, getSections, getSubSections } from "@/lib/data/curriculum";
-import { toLessonContentOverride } from "@/lib/lesson-content";
+import { curricula } from "@/lib/data/curriculum";
+import {
+  buildRuntimeCurricula,
+  getRuntimeSections,
+  getRuntimeSubSections,
+  type CurriculumStructureNode,
+} from "@/lib/data/curriculum/runtime";
+import { toLessonContentOverride, type LessonContentOverride } from "@/lib/lesson-content";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { BookOpen, Layers, Pencil, Plus, Search, Video } from "lucide-react";
+import { BookOpen, FolderPlus, Layers, Pencil, Plus, Search, Trash2, Video } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+const LESSON_CONTENT_MIGRATION_MESSAGE =
+  "Supabase lesson_content jadvalida yangi dars metadata ustunlari yo'q. SQL Editor'da supabase/lesson_content_metadata_migration.sql faylini ishga tushiring.";
+
+function isMissingLessonContentMetadataError(message?: string) {
+  return Boolean(
+    message &&
+      (message.includes("lesson_content.subject_id") ||
+        message.includes("lesson_content.subject_name") ||
+        message.includes("lesson_content.section_id") ||
+        message.includes("lesson_content.sub_section_id") ||
+        message.includes("lesson_content.order_index") ||
+        message.includes("column") && message.includes("does not exist"))
+  );
+}
+
+function formatSaveError(message: string) {
+  return isMissingLessonContentMetadataError(message)
+    ? `${LESSON_CONTENT_MIGRATION_MESSAGE} Asl xato: ${message}`
+    : message;
+}
 
 function mergeLessons(
   baseLessons: LessonAdminData[],
@@ -98,12 +125,16 @@ export default function AdminContentPage() {
   const supabase = useMemo(() => createClient(), []);
   const stats = getAdminLessonStats();
   const [lessons, setLessons] = useState<LessonAdminData[]>([]);
+  const [lessonRows, setLessonRows] = useState<LessonContentOverride[]>([]);
+  const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState("");
+  const [schemaWarning, setSchemaWarning] = useState("");
   const [search, setSearch] = useState("");
   const [filterSubject, setFilterSubject] = useState("all");
   const [editing, setEditing] = useState<LessonAdminData | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [structureBusy, setStructureBusy] = useState(false);
 
   const [newLesson, setNewLesson] = useState({
     subjectId: "mathematics",
@@ -116,13 +147,34 @@ export default function AdminContentPage() {
     formulas: "",
     miniExamCount: 10,
     homeworkPdf: "",
-    homeworkDeadline: "",
   });
 
+  const runtimeCurricula = useMemo(
+    () => buildRuntimeCurricula(structureRows, lessonRows),
+    [lessonRows, structureRows]
+  );
+
   const loadLessons = useCallback(async () => {
+    const { data: structureData } = await supabase
+      .from("curriculum_structure")
+      .select("*")
+      .order("order_index", { ascending: true });
+    setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
+
+    const { error: schemaError } = await supabase
+      .from("lesson_content")
+      .select("lesson_id, subject_id, order_index")
+      .limit(1);
+
+    setSchemaWarning(
+      schemaError && isMissingLessonContentMetadataError(schemaError.message)
+        ? formatSaveError(schemaError.message)
+        : ""
+    );
+
     const { data, error } = await supabase.from("lesson_content").select("*");
     if (error) {
-      setSaveError(error.message);
+      setSaveError(formatSaveError(error.message));
       setLessons(getAdminLessons());
       setLoading(false);
       return;
@@ -146,7 +198,8 @@ export default function AdminContentPage() {
       homework_pdf: string;
       homework_deadline: string;
     }>;
-    setSaveError("");
+    setLessonRows(rows as LessonContentOverride[]);
+    if (!schemaError) setSaveError("");
     setLessons(mergeLessons(getAdminLessons(), rows));
     setLoading(false);
   }, [supabase]);
@@ -161,7 +214,7 @@ export default function AdminContentPage() {
 
     load();
 
-    const channel = supabase
+    const lessonChannel = supabase
       .channel("admin-lesson-content")
       .on(
         "postgres_changes",
@@ -171,24 +224,31 @@ export default function AdminContentPage() {
         }
       )
       .subscribe();
+    const structureChannel = supabase
+      .channel("admin-curriculum-structure")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "curriculum_structure" },
+        () => {
+          void loadLessons();
+        }
+      )
+      .subscribe();
 
     return () => {
       active = false;
-      supabase.removeChannel(channel);
+      supabase.removeChannel(lessonChannel);
+      supabase.removeChannel(structureChannel);
     };
   }, [loadLessons, supabase]);
 
   const sections = useMemo(
-    () => getSections(newLesson.subjectId),
-    [newLesson.subjectId]
+    () => getRuntimeSections(runtimeCurricula, newLesson.subjectId),
+    [newLesson.subjectId, runtimeCurricula]
   );
   const subSections = useMemo(
-    () =>
-      getSubSections(
-        newLesson.subjectId,
-        newLesson.sectionId || sections[0]?.id || ""
-      ),
-    [newLesson.subjectId, newLesson.sectionId, sections]
+    () => getRuntimeSubSections(runtimeCurricula, newLesson.subjectId, newLesson.sectionId || sections[0]?.id || ""),
+    [newLesson.sectionId, newLesson.subjectId, runtimeCurricula, sections]
   );
 
   const filtered = useMemo(() => {
@@ -205,7 +265,6 @@ export default function AdminContentPage() {
 
   const handleSave = async (data: LessonAdminData) => {
     setSaveError("");
-    setLessons((prev) => prev.map((l) => (l.id === data.id ? data : l)));
     if (!user) {
       setSaveError("Admin session topilmadi. Qayta login qiling.");
       await loadLessons();
@@ -219,10 +278,11 @@ export default function AdminContentPage() {
       { onConflict: "lesson_id" }
     );
     if (error) {
-      setSaveError(error.message);
+      setSaveError(formatSaveError(error.message));
       await loadLessons();
       return;
     }
+    setLessons((prev) => prev.map((l) => (l.id === data.id ? data : l)));
     setEditing(null);
   };
 
@@ -233,6 +293,10 @@ export default function AdminContentPage() {
     const sec = subj?.sections.find((s) => s.id === effectiveSectionId);
     const effectiveSubSectionId = newLesson.subSectionId || sec?.subSections[0]?.id || "";
     const sub = sec?.subSections.find((s) => s.id === effectiveSubSectionId);
+    if (!effectiveSectionId || !effectiveSubSectionId || !sub) {
+      setSaveError("Yangi dars qo'shishdan oldin section va sub-section mavjud bo'lishi kerak.");
+      return;
+    }
     const id = `new-${Date.now()}`;
     const item: LessonAdminData = {
       id,
@@ -250,9 +314,8 @@ export default function AdminContentPage() {
       formulas: newLesson.formulas,
       miniExamCount: newLesson.miniExamCount,
       homeworkPdf: newLesson.homeworkPdf,
-      homeworkDeadline: newLesson.homeworkDeadline,
+      homeworkDeadline: "",
     };
-    setLessons((prev) => [item, ...prev]);
     if (!user) {
       setSaveError("Admin session topilmadi. Qayta login qiling.");
       await loadLessons();
@@ -266,12 +329,170 @@ export default function AdminContentPage() {
       { onConflict: "lesson_id" }
     );
     if (error) {
-      setSaveError(error.message);
+      setSaveError(formatSaveError(error.message));
       await loadLessons();
       return;
     }
+    setLessons((prev) => [item, ...prev]);
     setShowAdd(false);
     setEditing(item);
+  };
+
+  const handleDeleteLesson = async (lesson: LessonAdminData) => {
+    setSaveError("");
+    if (!user) {
+      setSaveError("Admin session topilmadi. Qayta login qiling.");
+      await loadLessons();
+      return;
+    }
+
+    const { error } = await supabase
+      .from("lesson_content")
+      .delete()
+      .eq("lesson_id", lesson.id);
+
+    if (error) {
+      setSaveError(formatSaveError(error.message));
+      await loadLessons();
+      return;
+    }
+
+    const baseIds = new Set(getAdminLessons().map((item) => item.id));
+    if (baseIds.has(lesson.id)) {
+      await loadLessons();
+    } else {
+      setLessons((prev) => prev.filter((item) => item.id !== lesson.id));
+    }
+    setEditing(null);
+  };
+
+  const upsertStructureNode = async (node: CurriculumStructureNode) => {
+    if (!user) {
+      setSaveError("Admin session topilmadi. Qayta login qiling.");
+      return false;
+    }
+    setStructureBusy(true);
+    const { error } = await supabase.from("curriculum_structure").upsert(
+      {
+        ...node,
+        parent_section_id: node.parent_section_id ?? "",
+        updated_by: user.id,
+        updated_at: new Date().toISOString(),
+      } as never,
+      { onConflict: "node_type,subject_id,node_id,parent_section_id" }
+    );
+    setStructureBusy(false);
+    if (error) {
+      setSaveError(error.message);
+      return false;
+    }
+    await loadLessons();
+    return true;
+  };
+
+  const createSection = async (subjectId: string) => {
+    const name = window.prompt("Yangi section nomi");
+    if (!name?.trim()) return;
+    const orderRaw = window.prompt("Section tartibi", String((runtimeCurricula.find((subject) => subject.id === subjectId)?.sections.length ?? 0) + 1));
+    const order = Number(orderRaw || "999");
+    await upsertStructureNode({
+      node_id: `section-${Date.now()}`,
+      node_type: "section",
+      subject_id: subjectId,
+      parent_section_id: "",
+      name: name.trim(),
+      order_index: Number.isFinite(order) ? order : 999,
+      is_deleted: false,
+    });
+  };
+
+  const editSection = async (subjectId: string, sectionId: string, currentName: string, currentOrder: number) => {
+    const name = window.prompt("Section nomi", currentName);
+    if (!name?.trim()) return;
+    const orderRaw = window.prompt("Section tartibi", String(currentOrder));
+    const order = Number(orderRaw || currentOrder);
+    await upsertStructureNode({
+      node_id: sectionId,
+      node_type: "section",
+      subject_id: subjectId,
+      parent_section_id: "",
+      name: name.trim(),
+      order_index: Number.isFinite(order) ? order : currentOrder,
+      is_deleted: false,
+    });
+  };
+
+  const deleteSection = async (subjectId: string, sectionId: string, sectionName: string, lessonCount: number) => {
+    const warning =
+      lessonCount > 0
+        ? `${sectionName} ichida ${lessonCount} ta dars bor. O'chirsangiz shu bo'lim user tomonda yashirinadi. Davom etilsinmi?`
+        : `${sectionName} section o'chirilsinmi?`;
+    if (!window.confirm(warning)) return;
+    await upsertStructureNode({
+      node_id: sectionId,
+      node_type: "section",
+      subject_id: subjectId,
+      parent_section_id: "",
+      name: sectionName,
+      order_index: 999,
+      is_deleted: true,
+    });
+  };
+
+  const createSubSection = async (subjectId: string, sectionId: string, sectionName: string) => {
+    const name = window.prompt(`${sectionName} uchun yangi sub-section nomi`);
+    if (!name?.trim()) return;
+    await upsertStructureNode({
+      node_id: `sub-${Date.now()}`,
+      node_type: "sub_section",
+      subject_id: subjectId,
+      parent_section_id: sectionId,
+      name: name.trim(),
+      order_index: 999,
+      is_deleted: false,
+    });
+  };
+
+  const editSubSection = async (
+    subjectId: string,
+    sectionId: string,
+    subSectionId: string,
+    currentName: string
+  ) => {
+    const name = window.prompt("Sub-section nomi", currentName);
+    if (!name?.trim()) return;
+    await upsertStructureNode({
+      node_id: subSectionId,
+      node_type: "sub_section",
+      subject_id: subjectId,
+      parent_section_id: sectionId,
+      name: name.trim(),
+      order_index: 999,
+      is_deleted: false,
+    });
+  };
+
+  const deleteSubSection = async (
+    subjectId: string,
+    sectionId: string,
+    subSectionId: string,
+    subSectionName: string,
+    lessonCount: number
+  ) => {
+    const warning =
+      lessonCount > 0
+        ? `${subSectionName} ichida ${lessonCount} ta dars bor. O'chirsangiz shu bo'lim user tomonda yashirinadi. Davom etilsinmi?`
+        : `${subSectionName} sub-section o'chirilsinmi?`;
+    if (!window.confirm(warning)) return;
+    await upsertStructureNode({
+      node_id: subSectionId,
+      node_type: "sub_section",
+      subject_id: subjectId,
+      parent_section_id: sectionId,
+      name: subSectionName,
+      order_index: 999,
+      is_deleted: true,
+    });
   };
 
   return (
@@ -302,6 +523,66 @@ export default function AdminContentPage() {
           <p className="text-2xl font-bold">{lessons.length || stats.lessons}</p>
           <p className="text-sm text-text-muted">Darslar</p>
         </Card>
+      </div>
+
+      <div className="space-y-4 mb-6">
+        {runtimeCurricula.map((subject) => (
+          <Card key={subject.id}>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-semibold">{subject.name}</h3>
+                <p className="text-xs text-text-muted">Section va sub-section boshqaruvi</p>
+              </div>
+              <Button variant="outline" size="sm" loading={structureBusy} onClick={() => createSection(subject.id)}>
+                <FolderPlus className="w-4 h-4" /> Section qo'shish
+              </Button>
+            </div>
+            <div className="space-y-3">
+              {subject.sections.map((section) => {
+                const lessonCount = section.subSections.reduce((count, subSection) => count + subSection.lessons.length, 0);
+                return (
+                  <div key={section.id} className="rounded-xl border border-border p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                      <div className="flex-1">
+                        <p className="font-medium">{section.name}</p>
+                        <p className="text-xs text-text-muted">{lessonCount} ta dars</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => createSubSection(subject.id, section.id, section.name)}>
+                          <Plus className="w-3.5 h-3.5" /> Sub-section
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => editSection(subject.id, section.id, section.name, section.order)}>
+                          <Pencil className="w-3.5 h-3.5" /> Tahrirlash
+                        </Button>
+                        <Button variant="danger" size="sm" onClick={() => deleteSection(subject.id, section.id, section.name, lessonCount)}>
+                          <Trash2 className="w-3.5 h-3.5" /> O'chirish
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {section.subSections.map((subSection) => (
+                        <div key={subSection.id} className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg bg-surface-elevated p-3">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{subSection.name}</p>
+                            <p className="text-xs text-text-muted">{subSection.lessons.length} ta dars</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button variant="outline" size="sm" onClick={() => editSubSection(subject.id, section.id, subSection.id, subSection.name)}>
+                              <Pencil className="w-3.5 h-3.5" /> Tahrirlash
+                            </Button>
+                            <Button variant="danger" size="sm" onClick={() => deleteSubSection(subject.id, section.id, subSection.id, subSection.name, subSection.lessons.length)}>
+                              <Trash2 className="w-3.5 h-3.5" /> O'chirish
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        ))}
       </div>
 
       {showAdd && (
@@ -372,6 +653,13 @@ export default function AdminContentPage() {
               value={newLesson.formulas}
               onChange={(e) => setNewLesson((n) => ({ ...n, formulas: e.target.value }))}
             />
+            <Input
+              label="Homework link"
+              className="sm:col-span-2"
+              value={newLesson.homeworkPdf}
+              onChange={(e) => setNewLesson((n) => ({ ...n, homeworkPdf: e.target.value }))}
+              placeholder="https://... yoki fayl manzili"
+            />
           </div>
           <div className="flex gap-2 mt-4">
             <Button variant="primary" onClick={handleAddLesson}>
@@ -427,9 +715,9 @@ export default function AdminContentPage() {
         </div>
       </Card>
 
-      {saveError && (
+      {(schemaWarning || saveError) && (
         <Card className="mb-6 border-danger/30">
-          <p className="text-sm text-danger">{saveError}</p>
+          <p className="text-sm text-danger">{saveError || schemaWarning}</p>
         </Card>
       )}
 
@@ -451,6 +739,9 @@ export default function AdminContentPage() {
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="muted">{lesson.miniExamCount} MCQ</Badge>
+                <Button variant="danger" size="sm" onClick={() => setEditing(lesson)}>
+                  <Trash2 className="w-3.5 h-3.5" /> O'chirish
+                </Button>
                 <Button variant="primary" size="sm" onClick={() => setEditing(lesson)}>
                   <Pencil className="w-3.5 h-3.5" /> Tahrirlash
                 </Button>
@@ -469,6 +760,7 @@ export default function AdminContentPage() {
         lesson={editing}
         onClose={() => setEditing(null)}
         onSave={handleSave}
+        onDelete={handleDeleteLesson}
       />
     </div>
   );

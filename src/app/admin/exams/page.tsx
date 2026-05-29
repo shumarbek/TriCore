@@ -7,7 +7,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { useAuth } from "@/contexts/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
-import { curricula, getSections, getSubSections } from "@/lib/data/curriculum";
+import { curricula } from "@/lib/data/curriculum";
+import { buildRuntimeCurricula, getRuntimeSections, getRuntimeSubSections, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
 import { cn } from "@/lib/utils";
 import { Database, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -32,12 +33,35 @@ export default function AdminExamsPage() {
   const [questions, setQuestions] = useState<EQ[]>([]);
   const [editing, setEditing] = useState<EQ | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
+  const runtimeCurricula = useMemo(() => buildRuntimeCurricula(structureRows), [structureRows]);
 
-  const sections = useMemo(() => getSections(subjectId), [subjectId]);
+  useEffect(() => {
+    const loadStructure = async () => {
+      const { data } = await supabase.from("curriculum_structure").select("*").order("order_index", { ascending: true });
+      setStructureRows((data ?? []) as CurriculumStructureNode[]);
+    };
+    void loadStructure();
+    const channel = supabase
+      .channel("admin-exams-curriculum-structure")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "curriculum_structure" },
+        () => {
+          void loadStructure();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase]);
+
+  const sections = useMemo(() => getRuntimeSections(runtimeCurricula, subjectId), [runtimeCurricula, subjectId]);
   const effectiveSection = sectionId || sections[0]?.id || "";
   const subSections = useMemo(
-    () => getSubSections(subjectId, effectiveSection),
-    [subjectId, effectiveSection]
+    () => getRuntimeSubSections(runtimeCurricula, subjectId, effectiveSection),
+    [runtimeCurricula, subjectId, effectiveSection]
   );
     const effectiveSub = subSectionId || subSections[0]?.id || "";
 

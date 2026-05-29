@@ -34,8 +34,8 @@ const defaults = (lesson: ReturnType<typeof getAllLessons>[0]): LessonAdminData 
   handbookTerms: "Asosiy atama|Ta'rif satri",
   formulas: "F = ma\nv = s / t",
   miniExamCount: 10,
-  homeworkPdf: "/homework/sample.pdf",
-  homeworkDeadline: "2026-06-01",
+  homeworkPdf: "",
+  homeworkDeadline: "",
 });
 
 export function getAdminLessons(): LessonAdminData[] {

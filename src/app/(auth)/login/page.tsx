@@ -7,9 +7,9 @@ import { useAuth } from "@/contexts/AuthProvider";
 import { Lock, Mail } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const { signIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -85,5 +85,13 @@ export default function LoginPage() {
       <AuthDivider />
       <SocialButtons />
     </AuthCard>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
   );
 }
