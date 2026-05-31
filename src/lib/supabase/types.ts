@@ -129,6 +129,29 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["exam_results"]["Insert"]>;
       };
+      practice_exam_guard: {
+        Row: {
+          id: string;
+          user_id: string;
+          guard_date: string;
+          cheat_attempts: number;
+          blocked_until: string | null;
+          last_reason: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          guard_date: string;
+          cheat_attempts?: number;
+          blocked_until?: string | null;
+          last_reason?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["practice_exam_guard"]["Insert"]>;
+      };
       messages: {
         Row: {
           id: string;

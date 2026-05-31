@@ -85,6 +85,18 @@ create table if not exists public.exam_results (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.practice_exam_guard (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  guard_date date not null,
+  cheat_attempts integer not null default 0,
+  blocked_until timestamptz,
+  last_reason text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(user_id, guard_date)
+);
+
 -- 5. MESSAGES (user <-> admin)
 create table if not exists public.messages (
   id uuid default gen_random_uuid() primary key,
@@ -198,6 +210,7 @@ alter table public.profiles enable row level security;
 alter table public.lesson_progress enable row level security;
 alter table public.exam_questions enable row level security;
 alter table public.exam_results enable row level security;
+alter table public.practice_exam_guard enable row level security;
 alter table public.messages enable row level security;
 alter table public.notes enable row level security;
 alter table public.ai_config enable row level security;
@@ -237,6 +250,10 @@ create policy "Admin can delete questions" on public.exam_questions for delete u
 create policy "Users view own results" on public.exam_results for select using (auth.uid() = user_id);
 create policy "Users insert own results" on public.exam_results for insert with check (auth.uid() = user_id);
 create policy "Admin views all results" on public.exam_results for select using (public.is_admin());
+create policy "Users view own practice exam guard" on public.practice_exam_guard for select using (auth.uid() = user_id);
+create policy "Users insert own practice exam guard" on public.practice_exam_guard for insert with check (auth.uid() = user_id);
+create policy "Users update own practice exam guard" on public.practice_exam_guard for update using (auth.uid() = user_id);
+create policy "Admin views all practice exam guard" on public.practice_exam_guard for select using (public.is_admin());
 
 -- MESSAGES
 create policy "Users view own messages" on public.messages for select using (auth.uid() = user_id);
@@ -292,6 +309,7 @@ create index if not exists idx_lesson_progress_user on public.lesson_progress(us
 create index if not exists idx_lesson_progress_lesson on public.lesson_progress(lesson_id);
 create index if not exists idx_exam_questions_scope on public.exam_questions(subject_id, section_id, sub_section_id);
 create index if not exists idx_exam_results_user on public.exam_results(user_id);
+create index if not exists idx_practice_exam_guard_user on public.practice_exam_guard(user_id, guard_date);
 create index if not exists idx_messages_user on public.messages(user_id);
 create index if not exists idx_messages_status on public.messages(status);
 create index if not exists idx_notes_user on public.notes(user_id);
