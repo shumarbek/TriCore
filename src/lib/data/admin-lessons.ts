@@ -15,6 +15,7 @@ export interface LessonAdminData {
   handbookTerms: string;
   formulas: string;
   miniExamCount: number;
+  miniExamQuestions: string;
   homeworkPdf: string;
   homeworkDeadline: string;
 }
@@ -34,6 +35,7 @@ const defaults = (lesson: ReturnType<typeof getAllLessons>[0]): LessonAdminData 
   handbookTerms: "Asosiy atama|Ta'rif satri",
   formulas: "F = ma\nv = s / t",
   miniExamCount: 10,
+  miniExamQuestions: "[]",
   homeworkPdf: "",
   homeworkDeadline: "",
 });

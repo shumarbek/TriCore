@@ -278,6 +278,7 @@ export interface Database {
           handbook_terms: string;
           formulas: string;
           mini_exam_count: number;
+          mini_exam_questions: string;
           homework_pdf: string;
           homework_deadline: string;
           updated_by: string;
@@ -300,6 +301,7 @@ export interface Database {
           handbook_terms?: string;
           formulas?: string;
           mini_exam_count?: number;
+          mini_exam_questions?: string;
           homework_pdf?: string;
           homework_deadline?: string;
           updated_by: string;

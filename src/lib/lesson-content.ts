@@ -16,6 +16,7 @@ export interface LessonContentOverride {
   handbook_terms: string;
   formulas: string;
   mini_exam_count: number;
+  mini_exam_questions?: string;
   homework_pdf: string;
   homework_deadline: string;
 }
@@ -69,6 +70,7 @@ export function toLessonContentOverride(lesson: LessonAdminData): LessonContentO
     handbook_terms: lesson.handbookTerms,
     formulas: lesson.formulas,
     mini_exam_count: lesson.miniExamCount,
+    mini_exam_questions: lesson.miniExamQuestions,
     homework_pdf: lesson.homeworkPdf,
     homework_deadline: lesson.homeworkDeadline,
   };

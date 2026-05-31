@@ -1,5 +1,6 @@
 "use client";
 
+import { MiniExamEditor } from "@/components/admin/MiniExamEditor";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
 import type { LessonAdminData } from "@/lib/data/admin-lessons";
@@ -125,11 +126,11 @@ export function LessonEditorModal({ lesson, onClose, onSave, onDelete }: LessonE
               />
             )}
             {tab === "exam" && (
-              <Input
-                label="Mini exam savollar soni"
-                type="number"
-                value={form.miniExamCount}
-                onChange={(e) => update({ miniExamCount: Number(e.target.value) })}
+              <MiniExamEditor
+                value={form.miniExamQuestions}
+                onChange={(miniExamQuestions, miniExamCount) =>
+                  update({ miniExamQuestions, miniExamCount })
+                }
               />
             )}
             {tab === "homework" && (

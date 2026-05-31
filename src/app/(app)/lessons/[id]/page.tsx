@@ -5,9 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Input";
 import { useAuth } from "@/contexts/AuthProvider";
-import {
-  type SubjectCurriculum,
-} from "@/lib/data/curriculum";
+import { type SubjectCurriculum } from "@/lib/data/curriculum";
 import {
   buildRuntimeCurricula,
   findRuntimeLessonById,
@@ -22,20 +20,14 @@ import {
   getVideoInfo,
   type LessonContentOverride,
 } from "@/lib/lesson-content";
+import { parseMiniExamQuestions } from "@/lib/mini-exam";
 import { XP_REWARDS, addXp, incrementDailyActivity } from "@/lib/learning/gamification";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import {
-  BookMarked,
-  Bookmark,
-  Copy,
-  Download,
-  ScrollText,
-  StickyNote,
-} from "lucide-react";
+import { BookMarked, Bookmark, Copy, Download, ScrollText, StickyNote, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const tabs = [
   "Ma'lumotnoma",
@@ -64,20 +56,18 @@ export default function LessonDetailPage() {
   const [miniExamBusy, setMiniExamBusy] = useState(false);
   const [lessonStartedAt] = useState(() => Date.now());
   const [miniExamStartedAt, setMiniExamStartedAt] = useState<number | null>(null);
+  const [miniExamOpen, setMiniExamOpen] = useState(false);
+  const [miniExamAnswers, setMiniExamAnswers] = useState<Record<string, number>>({});
+  const [miniExamResult, setMiniExamResult] = useState<{
+    correct: number;
+    total: number;
+    xpAwarded: number;
+  } | null>(null);
+  const [miniExamRewardClaimed, setMiniExamRewardClaimed] = useState(false);
   const [noteContent, setNoteContent] = useState(
     "# Dars qaydlari\n\n- Muhim punktlar\n- Misollar\n- Savollar"
   );
-
-  if (false) {
-    return (
-      <div>
-        <Link href="/lessons" className="text-sm text-primary">
-          ← Darslar
-        </Link>
-        <p className="mt-8 text-text-muted">Dars topilmadi</p>
-      </div>
-    );
-  }
+  const handbookCardRef = useRef<HTMLDivElement | null>(null);
 
   const runtimeCurricula = useMemo<SubjectCurriculum[]>(
     () => buildRuntimeCurricula(structureRows, allLessonRows),
@@ -100,6 +90,10 @@ export default function LessonDetailPage() {
       )
     : { rules: [], terms: [] };
   const formulas = buildFormulaList(contentOverride);
+  const miniExamQuestions = useMemo(
+    () => parseMiniExamQuestions(contentOverride?.mini_exam_questions),
+    [contentOverride?.mini_exam_questions]
+  );
   const effectiveTitle = contentOverride?.title || lesson?.title || "";
   const videoUrl = contentOverride?.video_url || "";
   const homeworkUrl = contentOverride?.homework_pdf || "";
@@ -110,11 +104,7 @@ export default function LessonDetailPage() {
     if (!lessonId) return;
     const loadContent = async () => {
       const [{ data }, { data: lessonData }, { data: structureData }] = await Promise.all([
-        supabase
-          .from("lesson_content")
-          .select("*")
-          .eq("lesson_id", lessonId)
-          .maybeSingle(),
+        supabase.from("lesson_content").select("*").eq("lesson_id", lessonId).maybeSingle(),
         supabase.from("lesson_content").select("*"),
         supabase.from("curriculum_structure").select("*").order("order_index", { ascending: true }),
       ]);
@@ -123,13 +113,16 @@ export default function LessonDetailPage() {
       setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
       setContentLoading(false);
     };
-    loadContent();
+
+    void loadContent();
     const lessonChannel = supabase
       .channel(`lesson-content-${lessonId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "lesson_content", filter: `lesson_id=eq.${lessonId}` },
-        () => loadContent()
+        () => {
+          void loadContent();
+        }
       )
       .subscribe();
     const structureChannel = supabase
@@ -137,9 +130,12 @@ export default function LessonDetailPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "curriculum_structure" },
-        () => loadContent()
+        () => {
+          void loadContent();
+        }
       )
       .subscribe();
+
     return () => {
       supabase.removeChannel(lessonChannel);
       supabase.removeChannel(structureChannel);
@@ -151,6 +147,7 @@ export default function LessonDetailPage() {
       setVideoDuration(null);
       return;
     }
+
     const loadDuration = async () => {
       try {
         const response = await fetch(`/api/video-metadata?url=${encodeURIComponent(videoUrl)}`);
@@ -160,8 +157,17 @@ export default function LessonDetailPage() {
         setVideoDuration(null);
       }
     };
-    loadDuration();
+
+    void loadDuration();
   }, [videoUrl]);
+
+  useEffect(() => {
+    setMiniExamStartedAt(null);
+    setMiniExamOpen(false);
+    setMiniExamAnswers({});
+    setMiniExamResult(null);
+    setMiniExamRewardClaimed(false);
+  }, [lessonId, contentOverride?.mini_exam_questions]);
 
   useEffect(() => {
     if (!user || !lesson) return;
@@ -171,16 +177,51 @@ export default function LessonDetailPage() {
         .select("lesson_id, status")
         .eq("user_id", user.id);
       const rows = (data ?? []) as Array<{ lesson_id: string; status: string }>;
-      const completed = new Set(rows.filter((x) => x.status === "completed").map((x) => x.lesson_id));
+      const completed = new Set(rows.filter((row) => row.status === "completed").map((row) => row.lesson_id));
       setIsCompleted(completed.has(lesson.id));
 
-      const all = lessonGroup.map((l) => l.id);
-      const group = all.length ? all : [lesson.id];
+      const group = lessonGroup.length ? lessonGroup.map((item) => item.id) : [lesson.id];
       const firstPending = group.find((id) => !completed.has(id)) ?? lesson.id;
       setIsUnlocked(completed.has(lesson.id) || firstPending === lesson.id);
     };
-    load();
+
+    void load();
   }, [lesson, lessonGroup, supabase, user]);
+
+  useEffect(() => {
+    if (!user || !lesson) return;
+    const loadMiniExamState = async () => {
+      const { data } = await supabase
+        .from("exam_results")
+        .select("correct_answers, total_questions")
+        .eq("user_id", user.id)
+        .eq("subject_id", effectiveMeta?.subjectId ?? "")
+        .eq("section_id", effectiveMeta?.sectionId ?? "")
+        .eq("sub_section_id", lesson.id)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      const latest = (data ?? [])[0] as
+        | { correct_answers?: number | null; total_questions?: number | null }
+        | undefined;
+
+      if (!latest) {
+        setMiniExamRewardClaimed(false);
+        return;
+      }
+
+      const correct = latest.correct_answers ?? 0;
+      const total = latest.total_questions ?? miniExamQuestions.length;
+      setMiniExamRewardClaimed(true);
+      setMiniExamResult({
+        correct,
+        total,
+        xpAwarded: correct * 5,
+      });
+    };
+
+    void loadMiniExamState();
+  }, [effectiveMeta?.sectionId, effectiveMeta?.subjectId, lesson, miniExamQuestions.length, supabase, user]);
 
   const markLessonCompleted = async () => {
     if (!user || !effectiveMeta || !lesson || isCompleted || !isUnlocked) return;
@@ -213,6 +254,7 @@ export default function LessonDetailPage() {
         time_spent_minutes: Math.max(1, Math.ceil((Date.now() - lessonStartedAt) / 60000)),
       });
     }
+
     await refreshProfile();
     setIsCompleted(true);
     setBusy(false);
@@ -220,29 +262,52 @@ export default function LessonDetailPage() {
   };
 
   const submitMiniExam = async () => {
-    if (!user || !effectiveMeta || !lesson) return;
+    if (!user || !effectiveMeta || !lesson || !miniExamQuestions.length || miniExamBusy) return;
     setMiniExamBusy(true);
     const timeSpentMinutes = Math.max(
       1,
       Math.ceil((Date.now() - (miniExamStartedAt ?? Date.now())) / 60000)
     );
+    const correctAnswers = miniExamQuestions.reduce((total, question) => {
+      return total + (miniExamAnswers[question.id] === question.correctIndex ? 1 : 0);
+    }, 0);
+    const totalQuestions = miniExamQuestions.length;
+    const score = Math.round((correctAnswers / totalQuestions) * 100);
+    const xpAwarded = correctAnswers * 5;
+
     await supabase.from("exam_results").insert({
       user_id: user.id,
       subject_id: effectiveMeta.subjectId,
       section_id: effectiveMeta.sectionId,
       sub_section_id: lesson.id,
-      score: 100,
-      total_questions: 10,
-      correct_answers: 10,
+      score,
+      total_questions: totalQuestions,
+      correct_answers: correctAnswers,
       time_spent: timeSpentMinutes,
     } as never);
-    await addXp(supabase, user.id, XP_REWARDS.lessonExam);
+    if (!miniExamRewardClaimed) {
+      await addXp(supabase, user.id, xpAwarded);
+      setMiniExamRewardClaimed(true);
+    }
     await incrementDailyActivity(supabase, user.id, {
       exams_taken: 1,
       time_spent_minutes: timeSpentMinutes,
     });
     await refreshProfile();
+    setMiniExamResult({
+      correct: correctAnswers,
+      total: totalQuestions,
+      xpAwarded: miniExamRewardClaimed ? 0 : xpAwarded,
+    });
+    setMiniExamOpen(false);
     setMiniExamBusy(false);
+  };
+
+  const openHandbookDetails = () => {
+    setActiveTab("Ma'lumotnoma");
+    requestAnimationFrame(() => {
+      handbookCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   const tabIcons: Partial<Record<(typeof tabs)[number], React.ComponentType<{ className?: string }>>> = {
@@ -254,7 +319,7 @@ export default function LessonDetailPage() {
     return (
       <div>
         <Link href="/lessons" className="text-sm text-primary">
-          в†ђ Darslar
+          Darslar
         </Link>
         <p className="mt-8 text-text-muted">
           {contentLoading ? "Dars yuklanmoqda..." : "Dars topilmadi"}
@@ -266,7 +331,7 @@ export default function LessonDetailPage() {
   return (
     <div className="max-w-6xl mx-auto">
       <Link href="/lessons" className="text-sm text-text-muted hover:text-primary mb-4 inline-block">
-        ← Darslar
+        Darslar
       </Link>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -289,7 +354,8 @@ export default function LessonDetailPage() {
                 </div>
               )}
               <span className="absolute bottom-4 left-4 text-sm text-text-muted">
-                {effectiveTitle}{formattedDuration ? ` - ${formattedDuration}` : ""}
+                {effectiveTitle}
+                {formattedDuration ? ` - ${formattedDuration}` : ""}
               </span>
             </div>
             <div className="p-4 flex flex-wrap items-center gap-3 border-t border-border">
@@ -345,12 +411,13 @@ export default function LessonDetailPage() {
             })}
           </div>
 
+          <div ref={handbookCardRef}>
           <Card>
             {activeTab === "Ma'lumotnoma" && (
               <div className="space-y-6">
                 <p className="text-sm text-text-muted flex items-center gap-2">
                   <ScrollText className="w-4 h-4 text-primary" />
-                  Shu dars uchun qoidalar va atamalar (admin tomonidan tayyorlangan)
+                  Shu dars uchun qoidalar va atamalar
                 </p>
                 <div>
                   <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
@@ -372,21 +439,22 @@ export default function LessonDetailPage() {
                 <div>
                   <h3 className="font-semibold text-lg mb-3">Atamalar</h3>
                   <div className="space-y-2">
-                    {handbook.terms.map((t) => (
+                    {handbook.terms.map((term) => (
                       <div
-                        key={t.term}
+                        key={term.term}
                         className="flex flex-col sm:flex-row sm:gap-4 p-3 rounded-xl border border-border/80"
                       >
                         <span className="font-semibold text-sm text-accent min-w-[140px]">
-                          {t.term}
+                          {term.term}
                         </span>
-                        <span className="text-sm text-text-muted">{t.definition}</span>
+                        <span className="text-sm text-text-muted">{term.definition}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
             )}
+
             {activeTab === "Notes" && (
               <div className="space-y-3">
                 <p className="text-xs text-text-muted">
@@ -399,42 +467,70 @@ export default function LessonDetailPage() {
                 <Textarea
                   className="min-h-[200px] font-mono text-sm"
                   value={noteContent}
-                  onChange={(e) => setNoteContent(e.target.value)}
+                  onChange={(event) => setNoteContent(event.target.value)}
                 />
                 <p className="text-xs text-success">Avtomatik saqlandi</p>
               </div>
             )}
+
             {activeTab === "Formulas" && (
               <div className="space-y-3">
-                {formulas.map((f) => (
-                  <div key={f.name} className="p-4 rounded-xl bg-surface-elevated border border-border">
+                {formulas.map((formula) => (
+                  <div key={formula.name} className="p-4 rounded-xl bg-surface-elevated border border-border">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-sm">{f.name}</span>
-                      <Button variant="ghost" size="sm"><Copy className="w-4 h-4" /></Button>
+                      <span className="font-medium text-sm">{formula.name}</span>
+                      <Button variant="ghost" size="sm">
+                        <Copy className="w-4 h-4" />
+                      </Button>
                     </div>
-                    <p className="font-mono text-accent">{f.expr}</p>
+                    <p className="font-mono text-accent">{formula.expr}</p>
                   </div>
                 ))}
               </div>
             )}
+
             {activeTab === "Mini Exam" && (
-              <div className="text-center py-8">
-                <p className="text-text-muted mb-4">10 ta MCQ · 15 daqiqa</p>
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    if (!miniExamStartedAt) {
-                      setMiniExamStartedAt(Date.now());
-                      return;
-                    }
-                    submitMiniExam();
-                  }}
-                  loading={miniExamBusy}
-                >
-                  {miniExamStartedAt ? "Mini imtihonni yakunlash" : "Mini imtihonni boshlash"}
-                </Button>
+              <div className="space-y-4">
+                {!miniExamQuestions.length ? (
+                  <div className="rounded-xl border border-dashed border-border p-4 text-sm text-text-muted">
+                    Bu dars uchun mini exam hali admin tomonidan kiritilmagan.
+                  </div>
+                ) : !miniExamOpen ? (
+                  <div className="text-center py-8">
+                    <p className="text-text-muted mb-2">{miniExamQuestions.length} ta savol</p>
+                    <p className="text-xs text-text-muted mb-4">
+                      Har bir to&apos;g&apos;ri javob uchun 5 XP beriladi.
+                    </p>
+                    {miniExamRewardClaimed && miniExamResult && (
+                      <p className="text-xs text-text-muted mb-4">
+                        Bu mini exam uchun XP oldin berilgan. Qayta ishlasangiz natija saqlanadi, lekin XP qayta qo&apos;shilmaydi.
+                      </p>
+                    )}
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        setMiniExamStartedAt(Date.now());
+                        setMiniExamOpen(true);
+                        setMiniExamAnswers({});
+                        setMiniExamResult(null);
+                      }}
+                    >
+                      Mini imtihonni boshlash
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-text-muted">
+                      Mini exam alohida oynada ochildi. Oynani yopib qo&apos;ysangiz javoblar shu sahifada saqlanib turadi.
+                    </div>
+                    <Button variant="outline" onClick={() => setMiniExamOpen(true)}>
+                      Oynani qayta ochish
+                    </Button>
+                  </>
+                )}
               </div>
             )}
+
             {activeTab === "Homework" && (
               <div className="space-y-4">
                 <p className="text-sm text-text-muted">
@@ -455,6 +551,7 @@ export default function LessonDetailPage() {
                 )}
               </div>
             )}
+
             {activeTab === "Discussion" && (
               <div className="space-y-4">
                 <div className="p-3 rounded-xl bg-surface-elevated">
@@ -462,10 +559,13 @@ export default function LessonDetailPage() {
                   <p className="text-xs text-text-muted mt-1">Admin · Javob</p>
                 </div>
                 <Textarea placeholder="Savol yozing..." />
-                <Button variant="primary" size="sm">Yuborish</Button>
+                <Button variant="primary" size="sm">
+                  Yuborish
+                </Button>
               </div>
             )}
           </Card>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -478,9 +578,9 @@ export default function LessonDetailPage() {
               {handbook.terms.length} ta atama · {handbook.rules.length} ta qoida
             </p>
             <ul className="text-sm space-y-1 text-text-muted">
-              {handbook.terms.slice(0, 3).map((t) => (
-                <li key={t.term}>
-                  <span className="text-accent">{t.term}</span> — {t.definition.slice(0, 40)}…
+              {handbook.terms.slice(0, 3).map((term) => (
+                <li key={term.term}>
+                  <span className="text-accent">{term.term}</span> - {term.definition.slice(0, 40)}...
                 </li>
               ))}
             </ul>
@@ -488,29 +588,41 @@ export default function LessonDetailPage() {
               variant="ghost"
               size="sm"
               className="w-full mt-3"
-              onClick={() => setActiveTab("Ma'lumotnoma")}
+              onClick={openHandbookDetails}
             >
               To&apos;liq o&apos;qish
             </Button>
           </Card>
+
           <Card>
             <h3 className="font-semibold mb-3 flex items-center gap-2">
               <Bookmark className="w-4 h-4 text-primary" />
               Formulalar
             </h3>
-            {formulas.map((f) => (
-              <div key={f.name} className="mb-3 last:mb-0">
-                <p className="text-xs text-text-muted">{f.name}</p>
-                <p className="font-mono text-sm text-accent mt-0.5">{f.expr}</p>
+            {formulas.map((formula) => (
+              <div key={formula.name} className="mb-3 last:mb-0">
+                <p className="text-xs text-text-muted">{formula.name}</p>
+                <p className="font-mono text-sm text-accent mt-0.5">{formula.expr}</p>
               </div>
             ))}
           </Card>
+
           <Card>
-            <Button variant="primary" className="w-full mb-2" onClick={markLessonCompleted} loading={busy} disabled={!isUnlocked || isCompleted}>{isCompleted ? "Yakunlangan" : "Yakunlash"}</Button>
+            <Button
+              variant="primary"
+              className="w-full mb-2"
+              onClick={markLessonCompleted}
+              loading={busy}
+              disabled={!isUnlocked || isCompleted}
+            >
+              {isCompleted ? "Yakunlangan" : "Yakunlash"}
+            </Button>
             <div className="grid grid-cols-2 gap-2">
               {previous ? (
                 <Link href={`/lessons/${previous.id}`} className="w-full">
-                  <Button variant="outline" className="w-full">Oldingi</Button>
+                  <Button variant="outline" className="w-full">
+                    Oldingi
+                  </Button>
                 </Link>
               ) : (
                 <Button variant="outline" className="w-full" disabled>
@@ -519,7 +631,9 @@ export default function LessonDetailPage() {
               )}
               {next ? (
                 <Link href={`/lessons/${next.id}`} className="w-full">
-                  <Button variant="outline" className="w-full">Keyingi</Button>
+                  <Button variant="outline" className="w-full">
+                    Keyingi
+                  </Button>
                 </Link>
               ) : (
                 <Button variant="outline" className="w-full" disabled>
@@ -530,8 +644,88 @@ export default function LessonDetailPage() {
           </Card>
         </div>
       </div>
+
+      {miniExamOpen && activeTab === "Mini Exam" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-3xl border border-border bg-surface shadow-2xl">
+            <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold">Mini Exam</h2>
+                <p className="text-xs text-text-muted">
+                  {miniExamQuestions.length} ta savol · har bir to&apos;g&apos;ri javob uchun 5 XP
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-xl border border-border p-2 text-text-muted hover:bg-surface-elevated"
+                onClick={() => setMiniExamOpen(false)}
+                disabled={miniExamBusy}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[calc(90vh-140px)] overflow-y-auto px-5 py-4 space-y-4">
+              {miniExamRewardClaimed && (
+                <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-text-muted">
+                  Bu mini exam uchun XP oldin berilgan. Qayta ishlasangiz natija yangilanadi, lekin XP qayta qo&apos;shilmaydi.
+                </div>
+              )}
+
+              {miniExamQuestions.map((question, questionIndex) => (
+                <div key={question.id} className="rounded-2xl border border-border p-4 space-y-3">
+                  <p className="font-medium">
+                    {questionIndex + 1}. {question.question}
+                  </p>
+                  <div className="space-y-2">
+                    {question.options.map((option, optionIndex) => {
+                      const checked = miniExamAnswers[question.id] === optionIndex;
+                      return (
+                        <button
+                          key={`${question.id}-option-${optionIndex}`}
+                          type="button"
+                          onClick={() =>
+                            setMiniExamAnswers((current) => ({
+                              ...current,
+                              [question.id]: optionIndex,
+                            }))
+                          }
+                          className={cn(
+                            "w-full rounded-xl border px-4 py-3 text-left text-sm transition-colors",
+                            checked
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border hover:bg-surface-elevated"
+                          )}
+                        >
+                          {option}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {miniExamResult && (
+                <div className="rounded-xl border border-success/30 bg-success/10 p-4 text-sm">
+                  <p className="font-medium text-success">
+                    Natija: {miniExamResult.correct}/{miniExamResult.total}
+                  </p>
+                  <p className="text-text-muted mt-1">Olingan XP: {miniExamResult.xpAwarded}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+              <Button variant="outline" onClick={() => setMiniExamOpen(false)} disabled={miniExamBusy}>
+                Yopish
+              </Button>
+              <Button variant="primary" onClick={submitMiniExam} loading={miniExamBusy}>
+                Examni tugatish
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-

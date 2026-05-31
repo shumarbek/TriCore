@@ -173,6 +173,7 @@ create table if not exists public.lesson_content (
   handbook_terms text not null default '',
   formulas text not null default '',
   mini_exam_count integer not null default 10,
+  mini_exam_questions text not null default '[]',
   homework_pdf text not null default '',
   homework_deadline text not null default '',
   updated_by uuid references public.profiles(id) not null,
@@ -187,6 +188,7 @@ alter table public.lesson_content add column if not exists section_name text not
 alter table public.lesson_content add column if not exists sub_section_id text not null default '';
 alter table public.lesson_content add column if not exists sub_section_name text not null default '';
 alter table public.lesson_content add column if not exists order_index integer not null default 999;
+alter table public.lesson_content add column if not exists mini_exam_questions text not null default '[]';
 
 -- ============================================
 -- ROW LEVEL SECURITY (RLS)

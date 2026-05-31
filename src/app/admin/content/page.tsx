@@ -1,6 +1,7 @@
 "use client";
 
 import { LessonEditorModal } from "@/components/admin/LessonEditorModal";
+import { MiniExamEditor } from "@/components/admin/MiniExamEditor";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -35,6 +36,7 @@ function isMissingLessonContentMetadataError(message?: string) {
         message.includes("lesson_content.subject_name") ||
         message.includes("lesson_content.section_id") ||
         message.includes("lesson_content.sub_section_id") ||
+        message.includes("lesson_content.mini_exam_questions") ||
         message.includes("lesson_content.order_index") ||
         message.includes("column") && message.includes("does not exist"))
   );
@@ -63,6 +65,7 @@ function mergeLessons(
     handbook_terms: string;
     formulas: string;
     mini_exam_count: number;
+    mini_exam_questions?: string;
     homework_pdf: string;
     homework_deadline: string;
   }>
@@ -86,6 +89,7 @@ function mergeLessons(
           handbookTerms: override.handbook_terms,
           formulas: override.formulas,
           miniExamCount: override.mini_exam_count,
+          miniExamQuestions: override.mini_exam_questions || "[]",
           homeworkPdf: override.homework_pdf,
           homeworkDeadline: override.homework_deadline,
         }
@@ -112,6 +116,7 @@ function mergeLessons(
         handbookTerms: row.handbook_terms,
         formulas: row.formulas,
         miniExamCount: row.mini_exam_count,
+        miniExamQuestions: row.mini_exam_questions || "[]",
         homeworkPdf: row.homework_pdf,
         homeworkDeadline: row.homework_deadline,
       } satisfies LessonAdminData;
@@ -146,6 +151,7 @@ export default function AdminContentPage() {
     handbookTerms: "",
     formulas: "",
     miniExamCount: 10,
+    miniExamQuestions: "[]",
     homeworkPdf: "",
   });
 
@@ -197,6 +203,7 @@ export default function AdminContentPage() {
       mini_exam_count: number;
       homework_pdf: string;
       homework_deadline: string;
+      mini_exam_questions?: string;
     }>;
     setLessonRows(rows as LessonContentOverride[]);
     if (!schemaError) setSaveError("");
@@ -313,6 +320,7 @@ export default function AdminContentPage() {
       handbookTerms: newLesson.handbookTerms,
       formulas: newLesson.formulas,
       miniExamCount: newLesson.miniExamCount,
+      miniExamQuestions: newLesson.miniExamQuestions,
       homeworkPdf: newLesson.homeworkPdf,
       homeworkDeadline: "",
     };
@@ -653,6 +661,14 @@ export default function AdminContentPage() {
               value={newLesson.formulas}
               onChange={(e) => setNewLesson((n) => ({ ...n, formulas: e.target.value }))}
             />
+            <div className="sm:col-span-2">
+              <MiniExamEditor
+                value={newLesson.miniExamQuestions}
+                onChange={(miniExamQuestions, miniExamCount) =>
+                  setNewLesson((n) => ({ ...n, miniExamQuestions, miniExamCount }))
+                }
+              />
+            </div>
             <Input
               label="Homework link"
               className="sm:col-span-2"
