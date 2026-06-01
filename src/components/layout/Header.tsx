@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/contexts/AuthProvider";
+import { useLanguage } from "@/contexts/LanguageProvider";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Bell, Flame, LogOut, Menu, Search, Zap } from "lucide-react";
@@ -15,6 +16,7 @@ interface HeaderProps {
 
 export function Header({ onMenuClick, title }: HeaderProps) {
   const { profile, user, signOut } = useAuth();
+  const { t } = useLanguage();
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [openNotifications, setOpenNotifications] = useState(false);
@@ -109,7 +111,7 @@ export function Header({ onMenuClick, title }: HeaderProps) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
             type="search"
-            placeholder="Search lessons, notes, topics..."
+            placeholder={t.header.searchPlaceholder}
             className="w-full pl-10 pr-4 py-2 rounded-xl bg-surface-elevated/80 border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
@@ -155,7 +157,7 @@ export function Header({ onMenuClick, title }: HeaderProps) {
           </button>
           {openNotifications && (
             <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface shadow-xl z-50 p-2">
-              <p className="px-2 py-1 text-xs font-semibold text-text-muted">Bildirishnomalar</p>
+              <p className="px-2 py-1 text-xs font-semibold text-text-muted">{t.common.notifications}</p>
               {profile?.role === "admin" && openMessages.length > 0 ? (
                 openMessages.map((m) => (
                   <Link
@@ -164,12 +166,12 @@ export function Header({ onMenuClick, title }: HeaderProps) {
                     className="block rounded-lg px-2 py-2 hover:bg-surface-elevated"
                     onClick={() => setOpenNotifications(false)}
                   >
-                    <p className="text-sm font-medium truncate">Yangi support xabar: {m.subject}</p>
+                    <p className="text-sm font-medium truncate">{t.header.newSupportMessage}: {m.subject}</p>
                     <p className="text-xs text-text-muted">{new Date(m.created_at).toLocaleString()}</p>
                   </Link>
                 ))
               ) : replies.length === 0 ? (
-                <p className="px-2 py-4 text-sm text-text-muted">Yangi bildirishnoma yo&apos;q.</p>
+                <p className="px-2 py-4 text-sm text-text-muted">{t.common.noNotifications}</p>
               ) : (
                 replies.map((r) => (
                   <Link
@@ -178,7 +180,7 @@ export function Header({ onMenuClick, title }: HeaderProps) {
                     className="block rounded-lg px-2 py-2 hover:bg-surface-elevated"
                     onClick={() => setOpenNotifications(false)}
                   >
-                    <p className="text-sm font-medium truncate">Support javobi: {r.subject}</p>
+                    <p className="text-sm font-medium truncate">{t.header.supportReply}: {r.subject}</p>
                     <p className="text-xs text-text-muted">
                       {r.replied_at ? new Date(r.replied_at).toLocaleString() : ""}
                     </p>
@@ -192,7 +194,7 @@ export function Header({ onMenuClick, title }: HeaderProps) {
         <button
           type="button"
           onClick={handleSignOut}
-          title="Chiqish"
+          title={t.common.logout}
           className="p-2 rounded-xl hover:bg-surface-elevated text-text-muted"
         >
           <LogOut className="w-5 h-5" />

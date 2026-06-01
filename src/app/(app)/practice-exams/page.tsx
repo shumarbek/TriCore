@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Input, Select } from "@/components/ui/Input";
 import { useAuth } from "@/contexts/AuthProvider";
+import { useLanguage } from "@/contexts/LanguageProvider";
 import {
   buildRuntimeCurricula,
   getRuntimeExamScopeLabel,
@@ -17,12 +18,6 @@ import { addXp, incrementDailyActivity } from "@/lib/learning/gamification";
 import { createClient } from "@/lib/supabase/client";
 import { CheckCircle, Clock, Database, Sparkles, Target, TriangleAlert, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-
-const SUBJECT_OPTIONS = [
-  { value: "mathematics", label: "Matematika" },
-  { value: "physics", label: "Fizika" },
-  { value: "chemistry", label: "Kimyo" },
-];
 
 interface ExamQuestion {
   id: string;
@@ -74,6 +69,7 @@ function formatRemaining(ms: number) {
 
 export default function PracticeExamsPage() {
   const { user, refreshProfile } = useAuth();
+  const { language } = useLanguage();
   const [subjectId, setSubjectId] = useState("physics");
   const [sectionId, setSectionId] = useState("");
   const [subSectionId, setSubSectionId] = useState("all");
@@ -98,25 +94,169 @@ export default function PracticeExamsPage() {
   const latestCheatAttemptsRef = useRef(0);
   const supabase = useMemo(() => createClient(), []);
   const runtimeCurricula = useMemo(() => buildRuntimeCurricula(structureRows), [structureRows]);
+  const tx = {
+    uz: {
+      title: "Amaliy imtihonlar",
+      description: "Admin tayyorlagan savollardan sub-bo'lim bo'yicha tasodifiy imtihon",
+      settings: "Imtihon sozlamalari",
+      subject: "Fan",
+      section: "Bo'lim",
+      subSection: "Sub-bo'lim",
+      count: "Savollar soni",
+      time: "Vaqt (daqiqa)",
+      scope: "Imtihon qamrovi",
+      bank: "Savollar banki",
+      start: "Imtihonni boshlash",
+      blocked: "Amaliy imtihon bugun uchun bloklangan",
+      latest: "So'nggi amaliy imtihonlar",
+      noHistory: "Hali amaliy imtihon ishlanmagan. Birinchi urinish shu yerda ko'rinadi.",
+      all: "Barchasi - tanlangan bo'limning barcha mavzulari",
+      poolSuffix: "ta",
+      poolPrepared: "admin tomonidan sub-bo'lim uchun tayyorlangan",
+      allHint: `"Barchasi" tanlandi - tanlangan bo'limdagi barcha sub-bo'lim mavzularidan tasodifiy tanlanadi.`,
+      lastResult: "So'nggi natija",
+      xpRule: "Bu urinish uchun XP to'g'ri javoblar soniga qarab hisoblandi.",
+      adminBank: "Admin banki",
+      readyQuestions: "Tayyor savollar",
+      adminBankDesc: "Har bir sub-bo'lim uchun admin oldindan savollar yaratadi. Imtihon shu bankdan tasodifiy tanlanadi.",
+      preciseScope: "Aniq qamrov",
+      preciseScopeDesc: "Savollar faqat tanlangan sub-bo'lim doirasidan beriladi.",
+      examTitle: "Amaliy imtihon",
+      focusWarning: "Fokusdan chiqsangiz imtihon darhol to'xtatiladi. Cheat urinishlari:",
+      cancel: "Bekor qilish",
+      runningWarning: "Imtihon davomida boshqa oyna, tab yoki tizim overlay ochilsa sessiya cheat deb to'xtatiladi.",
+      finish: "Javoblarni yakunlash",
+      answerBlocked: "Amaliy imtihon bekor qilindi. Yangi urinishni qayta boshlashingiz mumkin.",
+      cheatBlocked: "Cheat holati 3 marta qayd etildi. Amaliy imtihon huquqi bugun uchun bloklandi.",
+      cheatStopped: "Cheat holati qayd etildi",
+      timeLeft: "Qolgan vaqt",
+    },
+    kaa: {
+      title: "Ámeliy examlar",
+      description: "Admin tayarlaǵan sorawlarden sub-bólim boyınsha tásadipiy exam",
+      settings: "Exam sazlamaları",
+      subject: "Pán",
+      section: "Bólim",
+      subSection: "Sub-bólim",
+      count: "Sorawlar sanı",
+      time: "Waqıt (minut)",
+      scope: "Exam qamrawı",
+      bank: "Sorawlar banki",
+      start: "Examdı baslaw",
+      blocked: "Ámeliy exam bugin úshin bloklandı",
+      latest: "Sońǵı ámeliy examlar",
+      noHistory: "Házirge ámeliy exam isleńbegen. Birinshi urınıs usı jerde kórinedi.",
+      all: "Barlığı - tańlanǵan bólimniń barlıq mavzuları",
+      poolSuffix: "dana",
+      poolPrepared: "admin tárepinen sub-bólim ushın tayarlanǵan",
+      allHint: '"Barlığı" tańlandı - tańlanǵan bólimdegi barlıq sub-bólim mavzularınan tásadipiy alınadı.',
+      lastResult: "Sońǵı nátiyje",
+      xpRule: "Bul urınıs ushın XP durıs juwaplar sanına qarap esaplandı.",
+      adminBank: "Admin banki",
+      readyQuestions: "Tayár sorawlar",
+      adminBankDesc: "Hár bir sub-bólim ushın admin aldınnan sorawlar jaratadı. Exam sol banktan tásadipiy alınadı.",
+      preciseScope: "Anıq qamraw",
+      preciseScopeDesc: "Sorawlar faqat tańlanǵan sub-bólim boyınsha beriledi.",
+      examTitle: "Ámeliy exam",
+      focusWarning: "Fokustan shıqsańız exam darhal toqtatıladı. Cheat urınısları:",
+      cancel: "Biykarlaw",
+      runningWarning: "Exam dawamında basqa ayna, tab yaki sistema overlay ashılsa sessiya cheat dep toqtatıladı.",
+      finish: "Juwaplardı juwmaqlaw",
+      answerBlocked: "Ámeliy exam biykar qılındı. Jańa urınıstı qayta baslawıńız múmkin.",
+      cheatBlocked: "Cheat halatı 3 márte qayd etildi. Ámeliy exam huqıqı bugin úshin bloklandı.",
+      cheatStopped: "Cheat halatı qayd etildi",
+      timeLeft: "Qalǵan waqıt",
+    },
+    ru: {
+      title: "Практические экзамены",
+      description: "Случайный экзамен по подразделу из вопросов, подготовленных админом",
+      settings: "Настройки экзамена",
+      subject: "Предмет",
+      section: "Раздел",
+      subSection: "Подраздел",
+      count: "Количество вопросов",
+      time: "Время (минуты)",
+      scope: "Охват экзамена",
+      bank: "Банк вопросов",
+      start: "Начать экзамен",
+      blocked: "Практический экзамен заблокирован на сегодня",
+      latest: "Последние практические экзамены",
+      noHistory: "Практических экзаменов пока не было. Первая попытка появится здесь.",
+      all: "Все - все темы выбранного раздела",
+      poolSuffix: "шт.",
+      poolPrepared: "подготовлены админом для подраздела",
+      allHint: 'Выбрано "Все" - вопросы будут случайно взяты из всех подразделов выбранного раздела.',
+      lastResult: "Последний результат",
+      xpRule: "XP за эту попытку рассчитан по количеству правильных ответов.",
+      adminBank: "Банк админа",
+      readyQuestions: "Готовые вопросы",
+      adminBankDesc: "Для каждого подраздела админ заранее создаёт вопросы. Экзамен случайно выбирает их из этого банка.",
+      preciseScope: "Точный охват",
+      preciseScopeDesc: "Вопросы выдаются только по выбранному подразделу.",
+      examTitle: "Практический экзамен",
+      focusWarning: "Если вы потеряете фокус, экзамен сразу остановится. Попытки cheat:",
+      cancel: "Отмена",
+      runningWarning: "Если во время экзамена открыть другое окно, вкладку или системный overlay, сессия будет остановлена как cheat.",
+      finish: "Завершить ответы",
+      answerBlocked: "Практический экзамен отменён. Вы можете начать новую попытку.",
+      cheatBlocked: "Состояние cheat зафиксировано 3 раза. Доступ к практическому экзамену заблокирован до конца дня.",
+      cheatStopped: "Состояние cheat зафиксировано",
+      timeLeft: "Оставшееся время",
+    },
+    en: {
+      title: "Practice Exams",
+      description: "Random sub-section exam from admin-prepared questions",
+      settings: "Exam settings",
+      subject: "Subject",
+      section: "Section",
+      subSection: "Sub-section",
+      count: "Question count",
+      time: "Time (minutes)",
+      scope: "Exam scope",
+      bank: "Question bank",
+      start: "Start exam",
+      blocked: "Practice exam is blocked for today",
+      latest: "Recent practice exams",
+      noHistory: "No practice exams taken yet. Your first attempt will appear here.",
+      all: "All - every topic in the selected section",
+      poolSuffix: "",
+      poolPrepared: "prepared by admin for this sub-section",
+      allHint: '"All" is selected - questions will be picked randomly from every sub-section in the selected section.',
+      lastResult: "Latest result",
+      xpRule: "XP for this attempt was calculated from the number of correct answers.",
+      adminBank: "Admin bank",
+      readyQuestions: "Prepared questions",
+      adminBankDesc: "The admin prepares question pools for each sub-section. The exam picks from that bank randomly.",
+      preciseScope: "Precise scope",
+      preciseScopeDesc: "Questions are limited to the selected sub-section.",
+      examTitle: "Practice exam",
+      focusWarning: "If you leave focus, the exam will stop immediately. Cheat attempts:",
+      cancel: "Cancel",
+      runningWarning: "If another window, tab, or system overlay opens during the exam, the session is stopped as cheat.",
+      finish: "Finish answers",
+      answerBlocked: "Practice exam was cancelled. You can start a new attempt.",
+      cheatBlocked: "Cheat state was recorded 3 times. Practice exam access is blocked for today.",
+      cheatStopped: "Cheat state was recorded",
+      timeLeft: "Time left",
+    },
+  }[language];
+  const subjectOptions = [
+    { value: "mathematics", label: language === "ru" ? "Математика" : language === "en" ? "Mathematics" : "Matematika" },
+    { value: "physics", label: language === "ru" ? "Физика" : language === "en" ? "Physics" : "Fizika" },
+    { value: "chemistry", label: language === "ru" ? "Химия" : language === "en" ? "Chemistry" : language === "kaa" ? "Kimya" : "Kimyo" },
+  ];
 
   useEffect(() => {
     const loadStructure = async () => {
-      const { data } = await supabase
-        .from("curriculum_structure")
-        .select("*")
-        .order("order_index", { ascending: true });
+      const { data } = await supabase.from("curriculum_structure").select("*").order("order_index", { ascending: true });
       setStructureRows((data ?? []) as CurriculumStructureNode[]);
     };
     void loadStructure();
     const channel = supabase
       .channel("practice-curriculum-structure")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "curriculum_structure" },
-        () => {
-          void loadStructure();
-        }
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "curriculum_structure" }, () => {
+        void loadStructure();
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -167,21 +307,14 @@ export default function PracticeExamsPage() {
   );
 
   const subSectionOptions = useMemo(
-    () => [
-      { value: "all", label: "All - butun section mavzulari" },
-      ...subSections.map((section) => ({ value: section.id, label: section.name })),
-    ],
-    [subSections]
+    () => [{ value: "all", label: tx.all }, ...subSections.map((section) => ({ value: section.id, label: section.name }))],
+    [subSections, tx.all]
   );
 
   useEffect(() => {
     if (!effectiveSectionId) return;
     const loadCount = async () => {
-      let query = supabase
-        .from("exam_questions")
-        .select("id", { count: "exact", head: true })
-        .eq("subject_id", subjectId)
-        .eq("section_id", effectiveSectionId);
+      let query = supabase.from("exam_questions").select("id", { count: "exact", head: true }).eq("subject_id", subjectId).eq("section_id", effectiveSectionId);
       if (subSectionId !== "all") query = query.eq("sub_section_id", subSectionId);
       const { count } = await query;
       setPoolSize(count ?? 0);
@@ -192,12 +325,7 @@ export default function PracticeExamsPage() {
   useEffect(() => {
     if (!user) return;
     const loadGuard = async () => {
-      const { data, error } = await supabase
-        .from("practice_exam_guard")
-        .select("cheat_attempts, blocked_until")
-        .eq("user_id", user.id)
-        .eq("guard_date", getTodayKey())
-        .maybeSingle();
+      const { data, error } = await supabase.from("practice_exam_guard").select("cheat_attempts, blocked_until").eq("user_id", user.id).eq("guard_date", getTodayKey()).maybeSingle();
       if (error) {
         setGuardError(
           error.message.includes("practice_exam_guard")
@@ -219,9 +347,7 @@ export default function PracticeExamsPage() {
     if (!user || runtimeCurricula.length === 0) return;
     const loadHistory = async () => {
       const validSubSectionIds = new Set(
-        runtimeCurricula.flatMap((subject) =>
-          subject.sections.flatMap((section) => section.subSections.map((subSection) => subSection.id))
-        )
+        runtimeCurricula.flatMap((subject) => subject.sections.flatMap((section) => section.subSections.map((subSection) => subSection.id)))
       );
       const { data } = await supabase
         .from("exam_results")
@@ -242,16 +368,11 @@ export default function PracticeExamsPage() {
       const items = rows
         .filter((row) => row.sub_section_id === "all" || validSubSectionIds.has(row.sub_section_id))
         .map((row) => {
-          const label = getRuntimeExamScopeLabel(
-            runtimeCurricula,
-            row.subject_id,
-            row.section_id,
-            row.sub_section_id
-          );
+          const label = getRuntimeExamScopeLabel(runtimeCurricula, row.subject_id, row.section_id, row.sub_section_id);
           const [sectionLabel, subSectionLabel] = label.split(" -> ");
           return {
             id: row.id,
-            title: subSectionLabel || label || "Practice Exam",
+            title: subSectionLabel || label || tx.title,
             section: sectionLabel || row.section_id,
             score: row.score,
             date: new Date(row.created_at).toLocaleString(),
@@ -265,25 +386,18 @@ export default function PracticeExamsPage() {
 
     const channel = supabase
       .channel(`practice-history-${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "exam_results", filter: `user_id=eq.${user.id}` },
-        () => {
-          void loadHistory();
-        }
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "exam_results", filter: `user_id=eq.${user.id}` }, () => {
+        void loadHistory();
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [runtimeCurricula, supabase, user]);
+  }, [runtimeCurricula, supabase, user, tx.title]);
 
   const scopeLabel = useMemo(
-    () =>
-      effectiveSectionId
-        ? getRuntimeExamScopeLabel(runtimeCurricula, subjectId, effectiveSectionId, subSectionId)
-        : "",
+    () => (effectiveSectionId ? getRuntimeExamScopeLabel(runtimeCurricula, subjectId, effectiveSectionId, subSectionId) : ""),
     [runtimeCurricula, subjectId, effectiveSectionId, subSectionId]
   );
 
@@ -303,9 +417,7 @@ export default function PracticeExamsPage() {
   const commitRealExamTime = async () => {
     if (!user || !examStartedAt || activityCommittedRef.current) return;
     const timeSpentMinutes = Math.max(1, Math.ceil((Date.now() - examStartedAt) / 60000));
-    await incrementDailyActivity(supabase, user.id, {
-      time_spent_minutes: timeSpentMinutes,
-    });
+    await incrementDailyActivity(supabase, user.id, { time_spent_minutes: timeSpentMinutes });
     activityCommittedRef.current = true;
   };
 
@@ -320,7 +432,7 @@ export default function PracticeExamsPage() {
   const cancelExamSession = async () => {
     await commitRealExamTime();
     resetExamSession();
-    setExamWarning("Practice Exam bekor qilindi. Yangi urinishni qayta boshlashingiz mumkin.");
+    setExamWarning(tx.answerBlocked);
   };
 
   const registerCheatAttempt = async (reason: string) => {
@@ -351,11 +463,7 @@ export default function PracticeExamsPage() {
     setCheatAttempts(nextAttempts);
     setBlockedUntil(nextBlockedUntil);
     resetExamSession();
-    setExamWarning(
-      nextBlockedUntil
-        ? "Cheat holati 3 marta qayd etildi. Practice Exam huquqi bugun uchun bloklandi."
-        : `Cheat holati qayd etildi (${nextAttempts}/3). Exam to'xtatildi.`
-    );
+    setExamWarning(nextBlockedUntil ? tx.cheatBlocked : `${tx.cheatStopped} (${nextAttempts}/3).`);
   };
 
   useEffect(() => {
@@ -404,11 +512,7 @@ export default function PracticeExamsPage() {
   const startExam = async () => {
     if (!user || !effectiveSectionId || (blockedUntil && new Date(blockedUntil).getTime() > Date.now())) return;
     setGenerating(true);
-    let query = supabase
-      .from("exam_questions")
-      .select("id, question, options, correct_index, explanation")
-      .eq("subject_id", subjectId)
-      .eq("section_id", effectiveSectionId);
+    let query = supabase.from("exam_questions").select("id, question, options, correct_index, explanation").eq("subject_id", subjectId).eq("section_id", effectiveSectionId);
     if (subSectionId !== "all") query = query.eq("sub_section_id", subSectionId);
     const { data } = await query;
     const shuffled = shuffleQuestions((data ?? []) as unknown as ExamQuestion[]).slice(0, questionCount);
@@ -427,10 +531,7 @@ export default function PracticeExamsPage() {
     const correct = examQuestions.filter((question) => answers[question.id] === question.correct_index).length;
     const total = examQuestions.length;
     const score = Math.round((correct / total) * 100);
-    const timeSpentMinutes = Math.max(
-      1,
-      Math.ceil((Date.now() - (examStartedAt ?? Date.now())) / 60000)
-    );
+    const timeSpentMinutes = Math.max(1, Math.ceil((Date.now() - (examStartedAt ?? Date.now())) / 60000));
     const xpEarned = correct * 5;
     await supabase.from("exam_results").insert({
       user_id: user.id,
@@ -443,10 +544,7 @@ export default function PracticeExamsPage() {
       time_spent: timeSpentMinutes,
     } as never);
     await addXp(supabase, user.id, xpEarned);
-    await incrementDailyActivity(supabase, user.id, {
-      exams_taken: 1,
-      time_spent_minutes: timeSpentMinutes,
-    });
+    await incrementDailyActivity(supabase, user.id, { exams_taken: 1, time_spent_minutes: timeSpentMinutes });
     activityCommittedRef.current = true;
     await refreshProfile();
     setResult({ score, correct, total });
@@ -455,64 +553,30 @@ export default function PracticeExamsPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <PageHeader
-        title="Practice Exams"
-        description="Admin tayyorlagan savollardan sub-section bo'yicha tasodifiy imtihon"
-      />
+      <PageHeader title={tx.title} description={tx.description} />
 
       <Card className="mb-8">
         <h3 className="font-semibold mb-6 flex items-center gap-2">
           <Target className="w-5 h-5 text-primary" />
-          Imtihon sozlamalari
+          {tx.settings}
         </h3>
         <div className="grid sm:grid-cols-2 gap-4">
-          <Select
-            label="Fan (Subject)"
-            options={SUBJECT_OPTIONS}
-            value={subjectId}
-            onChange={(event) => handleSubjectChange(event.target.value)}
-          />
-          <Select
-            label="Bo'lim (Section)"
-            options={sections.map((section) => ({ value: section.id, label: section.name }))}
-            value={effectiveSectionId}
-            onChange={(event) => handleSectionChange(event.target.value)}
-          />
-          <Select
-            label="Sub-section"
-            options={subSectionOptions}
-            value={subSectionId}
-            onChange={(event) => setSubSectionId(event.target.value)}
-          />
-          <Input
-            label="Savollar soni"
-            type="number"
-            min={5}
-            max={Math.min(50, poolSize || 50)}
-            value={questionCount}
-            onChange={(event) => setQuestionCount(Number(event.target.value))}
-          />
-          <Input
-            label="Vaqt (daqiqa)"
-            type="number"
-            value={timeLimit}
-            onChange={(event) => setTimeLimit(Number(event.target.value))}
-          />
+          <Select label={tx.subject} options={subjectOptions} value={subjectId} onChange={(event) => handleSubjectChange(event.target.value)} />
+          <Select label={tx.section} options={sections.map((section) => ({ value: section.id, label: section.name }))} value={effectiveSectionId} onChange={(event) => handleSectionChange(event.target.value)} />
+          <Select label={tx.subSection} options={subSectionOptions} value={subSectionId} onChange={(event) => setSubSectionId(event.target.value)} />
+          <Input label={tx.count} type="number" min={5} max={Math.min(50, poolSize || 50)} value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))} />
+          <Input label={tx.time} type="number" value={timeLimit} onChange={(event) => setTimeLimit(Number(event.target.value))} />
         </div>
 
         {scopeLabel && (
           <div className="mt-4 p-4 rounded-xl bg-surface-elevated border border-border">
-            <p className="text-xs text-text-muted mb-1">Imtihon qamrovi</p>
+            <p className="text-xs text-text-muted mb-1">{tx.scope}</p>
             <p className="text-sm font-medium">{scopeLabel}</p>
             <p className="text-xs text-text-muted mt-2 flex items-center gap-1">
               <Database className="w-3.5 h-3.5" />
-              Savollar banki: ~{poolSize} ta (admin tomonidan sub-section uchun tayyorlangan)
+              {tx.bank}: ~{poolSize} {tx.poolSuffix} ({tx.poolPrepared})
             </p>
-            {subSectionId === "all" && (
-              <p className="text-xs text-accent mt-1">
-                "All" tanlandi - tanlangan sectiondagi barcha sub-section mavzularidan tasodifiy tanlanadi.
-              </p>
-            )}
+            {subSectionId === "all" && <p className="text-xs text-accent mt-1">{tx.allHint}</p>}
           </div>
         )}
 
@@ -525,31 +589,18 @@ export default function PracticeExamsPage() {
           </div>
         )}
 
-        {guardError && (
-          <div className="mt-4 rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
-            {guardError}
-          </div>
-        )}
+        {guardError && <div className="mt-4 rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">{guardError}</div>}
 
         {blockedUntil && remainingBlockMs > 0 && (
           <div className="mt-4 rounded-xl border border-danger/30 bg-danger/10 p-4">
-            <p className="text-sm font-medium text-danger">Practice Exam bugun uchun bloklangan</p>
-            <p className="text-xs text-text-muted mt-1">
-              Qolgan vaqt: {formatRemaining(remainingBlockMs)}
-            </p>
+            <p className="text-sm font-medium text-danger">{tx.blocked}</p>
+            <p className="text-xs text-text-muted mt-1">{tx.timeLeft}: {formatRemaining(remainingBlockMs)}</p>
           </div>
         )}
 
-        <Button
-          variant="primary"
-          size="lg"
-          className="w-full mt-6"
-          loading={generating}
-          disabled={!effectiveSectionId || poolSize === 0 || Boolean(blockedUntil && remainingBlockMs > 0)}
-          onClick={startExam}
-        >
+        <Button variant="primary" size="lg" className="w-full mt-6" loading={generating} disabled={!effectiveSectionId || poolSize === 0 || Boolean(blockedUntil && remainingBlockMs > 0)} onClick={startExam}>
           <Sparkles className="w-4 h-4" />
-          Imtihonni boshlash
+          {tx.start}
         </Button>
       </Card>
 
@@ -558,50 +609,38 @@ export default function PracticeExamsPage() {
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-semibold flex items-center gap-2">
               <Target className="w-5 h-5 text-primary" />
-              So'nggi natija
+              {tx.lastResult}
             </h3>
-            <Badge variant="success">
-              {result.correct}/{result.total} · {result.score}%
-            </Badge>
+            <Badge variant="success">{result.correct}/{result.total} · {result.score}%</Badge>
           </div>
-          <p className="text-sm text-text-muted mt-3">
-            Bu urinish uchun XP natijadagi to&apos;g&apos;ri javoblar soniga qarab hisoblandi.
-          </p>
+          <p className="text-sm text-text-muted mt-3">{tx.xpRule}</p>
         </Card>
       )}
 
       <div className="grid sm:grid-cols-2 gap-4">
         <Card>
-          <Badge variant="accent" className="mb-3">Admin bank</Badge>
+          <Badge variant="accent" className="mb-3">{tx.adminBank}</Badge>
           <h4 className="font-semibold flex items-center gap-2">
             <Database className="w-4 h-4 text-accent" />
-            Tayyor savollar
+            {tx.readyQuestions}
           </h4>
-          <p className="text-sm text-text-muted mt-2">
-            Har bir sub-section uchun admin oldindan savollar yaratadi. Imtihon ulardan random
-            tanlanadi - AI emas, barqaror savollar banki.
-          </p>
+          <p className="text-sm text-text-muted mt-2">{tx.adminBankDesc}</p>
         </Card>
         <Card>
-          <Badge variant="default" className="mb-3">Sub-section</Badge>
+          <Badge variant="default" className="mb-3">{tx.subSection}</Badge>
           <h4 className="font-semibold flex items-center gap-2">
             <Clock className="w-4 h-4 text-primary" />
-            Aniq qamrov
+            {tx.preciseScope}
           </h4>
-          <p className="text-sm text-text-muted mt-2">
-            Misol: Fizika {"->"} Molekulyar fizika va termodinamika {"->"} Molekulyar fizika asoslari.
-            Difficulty yo&apos;q - faqat sub-section tanlanadi.
-          </p>
+          <p className="text-sm text-text-muted mt-2">{tx.preciseScopeDesc}</p>
         </Card>
       </div>
 
-      <h3 className="font-semibold mt-10 mb-4">So'nggi practice imtihonlar</h3>
+      <h3 className="font-semibold mt-10 mb-4">{tx.latest}</h3>
       <div className="space-y-3">
         {history.length === 0 ? (
           <Card>
-            <p className="text-sm text-text-muted">
-              Hali practice exam ishlanmagan. Birinchi urinish shu yerda ko&apos;rinadi.
-            </p>
+            <p className="text-sm text-text-muted">{tx.noHistory}</p>
           </Card>
         ) : history.map((exam) => (
           <Card key={exam.id} hover>
@@ -624,32 +663,21 @@ export default function PracticeExamsPage() {
               <div>
                 <h3 className="font-semibold flex items-center gap-2">
                   <Target className="w-5 h-5 text-primary" />
-                  Practice Exam
+                  {tx.examTitle}
                 </h3>
-                <p className="text-xs text-text-muted">
-                  Fokusdan chiqsangiz exam darhol to&apos;xtatiladi. Cheat urinishlari: {cheatAttempts}/3
-                </p>
+                <p className="text-xs text-text-muted">{tx.focusWarning} {cheatAttempts}/3</p>
               </div>
-              <button
-                type="button"
-                onClick={() => void cancelExamSession()}
-                className="rounded-xl border border-border p-2 text-text-muted hover:bg-surface-elevated"
-                disabled={Boolean(result)}
-              >
+              <button type="button" onClick={() => void cancelExamSession()} className="rounded-xl border border-border p-2 text-text-muted hover:bg-surface-elevated" aria-label={tx.cancel} disabled={Boolean(result)}>
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <div className="max-h-[calc(92vh-140px)] overflow-y-auto px-5 py-4">
-              <div className="mb-5 rounded-xl border border-warning/20 bg-warning/10 p-4 text-sm text-text-muted">
-                Exam davomida boshqa oyna, tab yoki tizim overlay ochilsa sessiya cheat deb to&apos;xtatiladi.
-              </div>
+              <div className="mb-5 rounded-xl border border-warning/20 bg-warning/10 p-4 text-sm text-text-muted">{tx.runningWarning}</div>
               <div className="space-y-5">
                 {examQuestions.map((question, questionIndex) => (
                   <div key={question.id} className="rounded-xl border border-border p-4">
-                    <p className="font-medium text-sm mb-3">
-                      {questionIndex + 1}. {question.question}
-                    </p>
+                    <p className="font-medium text-sm mb-3">{questionIndex + 1}. {question.question}</p>
                     <div className="grid gap-2">
                       {question.options.map((option, optionIndex) => {
                         const selected = answers[question.id] === optionIndex;
@@ -657,17 +685,8 @@ export default function PracticeExamsPage() {
                           <button
                             key={`${question.id}-${optionIndex}`}
                             type="button"
-                            onClick={() =>
-                              setAnswers((current) => ({
-                                ...current,
-                                [question.id]: optionIndex,
-                              }))
-                            }
-                            className={`text-left rounded-lg border px-3 py-2 text-sm transition-colors ${
-                              selected
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "border-border hover:bg-surface-elevated"
-                            }`}
+                            onClick={() => setAnswers((current) => ({ ...current, [question.id]: optionIndex }))}
+                            className={`text-left rounded-lg border px-3 py-2 text-sm transition-colors ${selected ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-surface-elevated"}`}
                           >
                             {option}
                           </button>
@@ -680,14 +699,9 @@ export default function PracticeExamsPage() {
             </div>
 
             <div className="border-t border-border px-5 py-4">
-              <Button
-                variant="primary"
-                className="w-full"
-                disabled={Object.keys(answers).length < examQuestions.length}
-                onClick={submitExam}
-              >
+              <Button variant="primary" className="w-full" disabled={Object.keys(answers).length < examQuestions.length} onClick={submitExam}>
                 <CheckCircle className="w-4 h-4" />
-                Javoblarni yakunlash
+                {tx.finish}
               </Button>
             </div>
           </div>
@@ -696,3 +710,4 @@ export default function PracticeExamsPage() {
     </div>
   );
 }
+

@@ -1,5 +1,6 @@
-"use client";
+﻿"use client";
 
+import { useLanguage } from "@/contexts/LanguageProvider";
 import { useTheme } from "@/contexts/ThemeProvider";
 import { getCurrentLessonPerSubject } from "@/lib/data/curriculum";
 import { adminNavItems, mainNavItems } from "@/lib/data/navigation";
@@ -31,8 +32,9 @@ export function Sidebar({
   onMobileClose,
   admin = false,
 }: SidebarProps) {
-    const pathname = usePathname();
+  const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
+  const { t } = useLanguage();
   const items = admin ? adminNavItems : mainNavItems;
   const [lessonsOpen, setLessonsOpen] = useState(false);
   const currentLessons = useMemo(
@@ -40,6 +42,25 @@ export function Sidebar({
     [admin]
   );
   const isLessonsActive = pathname.startsWith("/lessons");
+  const navLabels: Record<string, string> = {
+    "/dashboard": t.nav.dashboard,
+    "/learning": t.nav.learning,
+    "/lessons": t.nav.lessons,
+    "/practice-exams": t.nav.practiceExams,
+    "/rankings": t.nav.rankings,
+    "/ai-assistant": t.nav.aiAssistant,
+    "/homework": t.nav.homework,
+    "/notes": t.nav.notes,
+    "/support": t.nav.support,
+    "/settings": t.nav.settings,
+    "/admin": t.nav.overview,
+    "/admin/content": t.nav.content,
+    "/admin/exams": t.nav.examBank,
+    "/admin/users": t.nav.users,
+    "/admin/messages": t.nav.messages,
+    "/admin/analytics": t.nav.analytics,
+    "/admin/ai-settings": t.nav.aiSettings,
+  };
 
   const content = (
     <aside
@@ -88,7 +109,7 @@ export function Sidebar({
                     href={item.href}
                     onClick={onMobileClose}
                     className="flex-1 min-w-0"
-                    title={collapsed ? item.label : undefined}
+                    title={collapsed ? navLabels[item.href] ?? item.label : undefined}
                   >
                     <motion.div
                       whileHover={{ x: collapsed ? 0 : 4 }}
@@ -106,7 +127,7 @@ export function Sidebar({
                         )}
                       />
                       {!collapsed && (
-                        <span className="text-sm font-medium truncate">{item.label}</span>
+                        <span className="text-sm font-medium truncate">{navLabels[item.href] ?? item.label}</span>
                       )}
                       {!collapsed && (
                         <button
@@ -192,7 +213,7 @@ export function Sidebar({
               key={item.href}
               href={item.href}
               onClick={onMobileClose}
-              title={collapsed ? item.label : undefined}
+              title={collapsed ? navLabels[item.href] ?? item.label : undefined}
             >
               <motion.div
                 whileHover={{ x: collapsed ? 0 : 4 }}
@@ -210,7 +231,7 @@ export function Sidebar({
                   )}
                 />
                 {!collapsed && (
-                  <span className="text-sm font-medium truncate">{item.label}</span>
+                  <span className="text-sm font-medium truncate">{navLabels[item.href] ?? item.label}</span>
                 )}
                 {active && !collapsed && (
                   <motion.div
@@ -234,14 +255,14 @@ export function Sidebar({
           )}
         >
           {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          {!collapsed && <span className="text-sm">Theme</span>}
+          {!collapsed && <span className="text-sm">{t.common.theme}</span>}
         </button>
         {!admin && !collapsed && (
           <Link
             href="/admin"
             className="block text-center text-xs text-text-muted hover:text-primary py-2"
           >
-            Admin Panel →
+            {t.common.adminPanel} -&gt;
           </Link>
         )}
         <button
@@ -252,7 +273,7 @@ export function Sidebar({
           <ChevronLeft
             className={cn("w-4 h-4 transition-transform", collapsed && "rotate-180")}
           />
-          {!collapsed && <span className="text-xs">Collapse</span>}
+          {!collapsed && <span className="text-xs">{t.common.collapse}</span>}
         </button>
       </div>
     </aside>
@@ -286,3 +307,4 @@ export function Sidebar({
     </>
   );
 }
+

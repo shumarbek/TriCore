@@ -1,5 +1,6 @@
 import { AIConfigProvider } from "@/contexts/AIConfigProvider";
 import { AuthProvider } from "@/contexts/AuthProvider";
+import { LanguageProvider } from "@/contexts/LanguageProvider";
 import { ThemeProvider } from "@/contexts/ThemeProvider";
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
@@ -28,9 +29,11 @@ export default function RootLayout({
         }
       >
         <ThemeProvider>
-          <AuthProvider>
-            <AIConfigProvider>{children}</AIConfigProvider>
-          </AuthProvider>
+          <LanguageProvider>
+            <AuthProvider>
+              <AIConfigProvider>{children}</AIConfigProvider>
+            </AuthProvider>
+          </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>

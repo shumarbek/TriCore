@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAuth } from "@/contexts/AuthProvider";
+import { useLanguage } from "@/contexts/LanguageProvider";
 import type { SubjectCurriculum } from "@/lib/data/curriculum";
 import { buildRuntimeCurricula, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
 import { subjects } from "@/lib/data/navigation";
@@ -17,21 +18,68 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 const statusConfig = {
-  completed: { icon: CheckCircle, badge: "success" as const, label: "Yakunlangan" },
-  in_progress: { icon: Play, badge: "accent" as const, label: "Jarayonda" },
-  locked: { icon: Lock, badge: "muted" as const, label: "Qulflangan" },
-  available: { icon: Circle, badge: "default" as const, label: "Ochiq" },
+  completed: { icon: CheckCircle, badge: "success" as const },
+  in_progress: { icon: Play, badge: "accent" as const },
+  locked: { icon: Lock, badge: "muted" as const },
+  available: { icon: Circle, badge: "default" as const },
 };
 
 export default function SubjectRoadmapPage() {
   const params = useParams();
   const subjectId = params.subject as string;
   const { user } = useAuth();
+  const { language } = useLanguage();
   const subject = subjects.find((s) => s.id === subjectId);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const supabase = useMemo(() => createClient(), []);
   const [contentRows, setContentRows] = useState<LessonContentOverride[]>([]);
   const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
+  const tx = {
+    uz: {
+      completed: "Yakunlangan",
+      progress: "Jarayonda",
+      locked: "Qulflangan",
+      available: "Ochiq",
+      notFound: "Fan topilmadi",
+      continue: "Davom etish",
+      subSections: "sub-bo'lim",
+      lessons: "dars",
+      description: "Bo'lim -> Sub-bo'lim -> Dars ko'rinishidagi ketma-ket roadmap",
+    },
+    kaa: {
+      completed: "Juwmaqlanǵan",
+      progress: "Jarayonda",
+      locked: "Qulıplanǵan",
+      available: "Ashıq",
+      notFound: "Pán tabılmadı",
+      continue: "Dawam etiw",
+      subSections: "sub-bólim",
+      lessons: "sabaq",
+      description: "Bólim -> Sub-bólim -> Sabaq kórinisindegi izbe-iz roadmap",
+    },
+    ru: {
+      completed: "Завершено",
+      progress: "В процессе",
+      locked: "Заблокировано",
+      available: "Открыто",
+      notFound: "Предмет не найден",
+      continue: "Продолжить",
+      subSections: "подразделов",
+      lessons: "уроков",
+      description: "Раздел -> Подраздел -> Урок в последовательной roadmap-структуре",
+    },
+    en: {
+      completed: "Completed",
+      progress: "In Progress",
+      locked: "Locked",
+      available: "Available",
+      notFound: "Subject not found",
+      continue: "Continue",
+      subSections: "sub-sections",
+      lessons: "lessons",
+      description: "Section -> Sub-section -> Lesson sequence roadmap",
+    },
+  }[language];
 
   const displayCurriculum = useMemo<SubjectCurriculum | null>(() => {
     return buildRuntimeCurricula(structureRows, contentRows).find((item) => item.id === subjectId) ?? null;
@@ -126,18 +174,18 @@ export default function SubjectRoadmapPage() {
     : null;
 
   if (!subject || !displayCurriculum) {
-    return <p className="text-text-muted">Fan topilmadi</p>;
+    return <p className="text-text-muted">{tx.notFound}</p>;
   }
 
   return (
     <div>
       <PageHeader
         title={subject.name}
-        description="Section → Sub-section → Dars — ketma-ket roadmap"
+        description={tx.description}
         action={
           continueLesson ? (
             <Link href={`/lessons/${continueLesson.id}`}>
-              <Button variant="primary">Davom etish</Button>
+              <Button variant="primary">{tx.continue}</Button>
             </Link>
           ) : undefined
         }
@@ -151,8 +199,7 @@ export default function SubjectRoadmapPage() {
               {section.name}
             </h3>
             <p className="text-xs text-text-muted mb-4">
-              {section.subSections.length} sub-section ·{" "}
-              {section.subSections.reduce((n, s) => n + s.lessons.length, 0)} dars
+              {section.subSections.length} {tx.subSections} · {section.subSections.reduce((n, s) => n + s.lessons.length, 0)} {tx.lessons}
             </p>
 
             <div className="space-y-5">
@@ -161,14 +208,19 @@ export default function SubjectRoadmapPage() {
                   <p className="text-sm font-semibold text-primary mb-2">{sub.name}</p>
                   <div className="grid sm:grid-cols-2 gap-2">
                     {sub.lessons.map((lesson) => {
-                      const firstPendingInSub =
-                        sub.lessons.find((l) => !completedIds.has(l.id))?.id ?? null;
+                      const firstPendingInSub = sub.lessons.find((l) => !completedIds.has(l.id))?.id ?? null;
                       const status = completedIds.has(lesson.id)
                         ? "completed"
                         : lesson.id === firstPendingInSub
                           ? "in_progress"
                           : "locked";
                       const cfg = statusConfig[status];
+                      const statusLabel = {
+                        completed: tx.completed,
+                        in_progress: tx.progress,
+                        locked: tx.locked,
+                        available: tx.available,
+                      };
                       const Icon = cfg.icon;
                       const className = cn(
                         "flex items-center gap-3 p-3 rounded-xl border transition-all",
@@ -186,10 +238,8 @@ export default function SubjectRoadmapPage() {
                               status === "locked" && "text-text-muted"
                             )}
                           />
-                          <span className="text-sm font-medium flex-1 leading-snug">
-                            {lesson.title}
-                          </span>
-                          <Badge variant={cfg.badge}>{cfg.label}</Badge>
+                          <span className="text-sm font-medium flex-1 leading-snug">{lesson.title}</span>
+                          <Badge variant={cfg.badge}>{statusLabel[status]}</Badge>
                         </>
                       );
                       return status === "locked" ? (

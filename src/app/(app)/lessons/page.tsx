@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { useLanguage } from "@/contexts/LanguageProvider";
 import { buildRuntimeCurricula, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
 import type { LessonContentOverride } from "@/lib/lesson-content";
 import { createClient } from "@/lib/supabase/client";
@@ -19,14 +20,8 @@ const statusBadge = {
   locked: "muted" as const,
 };
 
-const statusLabel = {
-  completed: "Yakunlangan",
-  in_progress: "Jarayonda",
-  available: "Ochiq",
-  locked: "Qulflangan",
-};
-
 export default function LessonsPage() {
+  const { language } = useLanguage();
   const [filter, setFilter] = useState<string>("all");
   const [contentRows, setContentRows] = useState<LessonContentOverride[]>([]);
   const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
@@ -58,7 +53,7 @@ export default function LessonsPage() {
       setContentRows((lessonData ?? []) as LessonContentOverride[]);
       setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
     };
-    loadOverrides();
+    void loadOverrides();
     const lessonChannel = supabase
       .channel("lesson-content-list")
       .on(
@@ -86,26 +81,74 @@ export default function LessonsPage() {
     };
   }, []);
 
-  const filtered =
-    filter === "all"
-      ? allLessons
-      : allLessons.filter((l) => l.subjectId === filter);
-
+  const filtered = filter === "all" ? allLessons : allLessons.filter((l) => l.subjectId === filter);
   const active = filtered.slice(0, 60);
+  const tx = {
+    uz: {
+      title: "Darslar",
+      description: "Barcha darslar - ma'lumotnoma, qaydlar va uy vazifalari har bir dars ichida",
+      all: "Barchasi",
+      completed: "Yakunlangan",
+      progress: "Jarayonda",
+      available: "Ochiq",
+      locked: "Qulflangan",
+      open: "Ochish",
+      mathematics: "Matematika",
+      physics: "Fizika",
+      chemistry: "Kimyo",
+    },
+    kaa: {
+      title: "Sabaqlar",
+      description: "Barlıq sabaqlar - maglumatnama, qaydlar hám úy tapsırmaları hár bir sabaq ishinde",
+      all: "Barlığı",
+      completed: "Juwmaqlanǵan",
+      progress: "Jarayonda",
+      available: "Ashıq",
+      locked: "Qulıplanǵan",
+      open: "Ashıw",
+      mathematics: "Matematika",
+      physics: "Fizika",
+      chemistry: "Kimya",
+    },
+    ru: {
+      title: "Уроки",
+      description: "Все уроки - справка, заметки и домашние задания внутри каждого урока",
+      all: "Все",
+      completed: "Завершено",
+      progress: "В процессе",
+      available: "Открыто",
+      locked: "Заблокировано",
+      open: "Открыть",
+      mathematics: "Математика",
+      physics: "Физика",
+      chemistry: "Химия",
+    },
+    en: {
+      title: "Lessons",
+      description: "All lessons - references, notes, and homework inside each lesson",
+      all: "All",
+      completed: "Completed",
+      progress: "In Progress",
+      available: "Available",
+      locked: "Locked",
+      open: "Open",
+      mathematics: "Mathematics",
+      physics: "Physics",
+      chemistry: "Chemistry",
+    },
+  }[language];
+  const statusLabel = { completed: tx.completed, in_progress: tx.progress, available: tx.available, locked: tx.locked };
 
   return (
     <div>
-      <PageHeader
-        title="Lessons"
-        description="Barcha darslar — ma'lumotnoma, notes, homework har dars ichida"
-      />
+      <PageHeader title={tx.title} description={tx.description} />
 
       <div className="flex flex-wrap gap-2 mb-6">
         {[
-          { id: "all", label: "Barchasi" },
-          { id: "mathematics", label: "Matematika" },
-          { id: "physics", label: "Fizika" },
-          { id: "chemistry", label: "Kimyo" },
+          { id: "all", label: tx.all },
+          { id: "mathematics", label: tx.mathematics },
+          { id: "physics", label: tx.physics },
+          { id: "chemistry", label: tx.chemistry },
         ].map((f) => (
           <button
             key={f.id}
@@ -113,9 +156,7 @@ export default function LessonsPage() {
             onClick={() => setFilter(f.id)}
             className={cn(
               "px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors",
-              filter === f.id
-                ? "border-primary/50 bg-primary/10 text-primary"
-                : "border-border text-text-muted"
+              filter === f.id ? "border-primary/50 bg-primary/10 text-primary" : "border-border text-text-muted"
             )}
           >
             {f.label}
@@ -137,23 +178,17 @@ export default function LessonsPage() {
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold group-hover:text-primary transition-colors truncate">
-                  {lesson.title}
-                </h3>
+                <h3 className="font-semibold group-hover:text-primary transition-colors truncate">{lesson.title}</h3>
                 <p className="text-sm text-text-muted truncate">
                   {lesson.subjectName} · {lesson.sectionName} · {lesson.subSectionName}
                 </p>
-                {lesson.status === "in_progress" && (
-                  <ProgressBar value={45} className="mt-2 max-w-xs" size="sm" />
-                )}
+                {lesson.status === "in_progress" && <ProgressBar value={45} className="mt-2 max-w-xs" size="sm" />}
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={statusBadge[lesson.status]}>
-                  {statusLabel[lesson.status]}
-                </Badge>
+                <Badge variant={statusBadge[lesson.status]}>{statusLabel[lesson.status]}</Badge>
                 {lesson.status !== "locked" ? (
                   <Link href={`/lessons/${lesson.id}`}>
-                    <Badge variant="accent">Ochish</Badge>
+                    <Badge variant="accent">{tx.open}</Badge>
                   </Link>
                 ) : null}
               </div>

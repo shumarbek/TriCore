@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -6,6 +6,7 @@ import { Card, StatCard } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useAuth } from "@/contexts/AuthProvider";
+import { useLanguage } from "@/contexts/LanguageProvider";
 import { createClient } from "@/lib/supabase/client";
 import { formatNumber } from "@/lib/utils";
 import {
@@ -48,8 +49,95 @@ const defaultWeekly = [
 
 export default function DashboardPage() {
   const { profile, user } = useAuth();
+  const { language } = useLanguage();
   const [stats, setStats] = useState<Stats>({ lessonsCompleted: 0, examsPassed: 0, rank: 0 });
   const [weekly, setWeekly] = useState(defaultWeekly);
+  const tx = {
+    uz: {
+      title: "Dashboard",
+      welcome: "Xush kelibsiz",
+      continue: "Davom etish",
+      streakUnit: "kun",
+      lessons: "Darslar",
+      exams: "Imtihonlar",
+      level: "Daraja",
+      rank: "Reyting",
+      weekly: "Haftalik faollik",
+      minutes: "daqiqa",
+      nextLevel: "keyingi levelga",
+      totalXp: "Jami XP",
+      streak: "Ketma-ketlik",
+      continueLearning: "O'rganishni davom ettirish",
+      nextLesson: "Roadmap bo'yicha keyingi dars",
+      practice: "Amaliy imtihon",
+      testKnowledge: "Bilimingizni sinab ko'ring",
+      ai: "AI yordamchi",
+      askAi: "Savollar bering, tushuntirishlar oling",
+    },
+    kaa: {
+      title: "Dashboard",
+      welcome: "Xosh keldiЕ„iz",
+      continue: "Dawam etiw",
+      streakUnit: "kГєn",
+      lessons: "Sabaqlar",
+      exams: "Examlar",
+      level: "DГЎreje",
+      rank: "Reyting",
+      weekly: "Hapta faollД±ЗµД±",
+      minutes: "minut",
+      nextLevel: "keyingi dГЎrejege",
+      totalXp: "UlД±wma XP",
+      streak: "Ketma-ketlik",
+      continueLearning: "OqД±wdД± dawam etiw",
+      nextLesson: "Roadmap boyД±nsha keyingi sabaq",
+      practice: "ГЃmeliy exam",
+      testKnowledge: "BilimiЕ„izdi sД±nap kГіriЕ„",
+      ai: "AI jГЎrdemshi",
+      askAi: "Sawal berip, tГєsindirme alД±Е„",
+    },
+    ru: {
+      title: "РџР°РЅРµР»СЊ",
+      welcome: "Р”РѕР±СЂРѕ РїРѕР¶Р°Р»РѕРІР°С‚СЊ",
+      continue: "РџСЂРѕРґРѕР»Р¶РёС‚СЊ",
+      streakUnit: "РґРЅ.",
+      lessons: "РЈСЂРѕРєРё",
+      exams: "Р­РєР·Р°РјРµРЅС‹",
+      level: "РЈСЂРѕРІРµРЅСЊ",
+      rank: "Р РµР№С‚РёРЅРі",
+      weekly: "РќРµРґРµР»СЊРЅР°СЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ",
+      minutes: "РјРёРЅСѓС‚",
+      nextLevel: "РґРѕ СЃР»РµРґСѓСЋС‰РµРіРѕ СѓСЂРѕРІРЅСЏ",
+      totalXp: "Р’СЃРµРіРѕ XP",
+      streak: "РЎРµСЂРёСЏ",
+      continueLearning: "РџСЂРѕРґРѕР»Р¶РёС‚СЊ РѕР±СѓС‡РµРЅРёРµ",
+      nextLesson: "РЎР»РµРґСѓСЋС‰РёР№ СѓСЂРѕРє РїРѕ roadmap",
+      practice: "РџСЂР°РєС‚РёС‡РµСЃРєРёР№ СЌРєР·Р°РјРµРЅ",
+      testKnowledge: "РџСЂРѕРІРµСЂСЊС‚Рµ СЃРІРѕРё Р·РЅР°РЅРёСЏ",
+      ai: "AI РїРѕРјРѕС‰РЅРёРє",
+      askAi: "Р—Р°РґР°РІР°Р№С‚Рµ РІРѕРїСЂРѕСЃС‹, РїРѕР»СѓС‡Р°Р№С‚Рµ РѕР±СЉСЏСЃРЅРµРЅРёСЏ",
+    },
+    en: {
+      title: "Dashboard",
+      welcome: "Welcome",
+      continue: "Continue",
+      streakUnit: "days",
+      lessons: "Lessons",
+      exams: "Exams",
+      level: "Daraja",
+      rank: "Rank",
+      weekly: "Weekly activity",
+      minutes: "minutes",
+      nextLevel: "to the next level",
+      totalXp: "Jami XP",
+      streak: "Ketma-ketlik",
+      continueLearning: "Continue learning",
+      nextLesson: "Next lesson in your roadmap",
+      practice: "Amaliy imtihon",
+      testKnowledge: "Test your knowledge",
+      ai: "AI yordamchi",
+      askAi: "Ask questions and get explanations",
+    },
+  }[language];
 
   useEffect(() => {
     if (!user) return;
@@ -113,22 +201,22 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title="Dashboard"
-        description={`Xush kelibsiz, ${profile?.full_name || "User"}!`}
+        title={tx.title}
+        description={`${tx.welcome}, ${profile?.full_name || "User"}!`}
         action={
           <Link href="/learning">
-            <Button variant="primary">Davom etish</Button>
+            <Button variant="primary">{tx.continue}</Button>
           </Link>
         }
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
         <StatCard label="XP" value={formatNumber(profile?.xp ?? 0)} icon={Zap} color="secondary" delay={0} />
-        <StatCard label="Streak" value={`${profile?.streak ?? 0} kun`} icon={Flame} color="warning" delay={0.05} />
-        <StatCard label="Darslar" value={stats.lessonsCompleted} icon={BookOpen} color="accent" delay={0.1} />
-        <StatCard label="Imtihonlar" value={stats.examsPassed} icon={CheckCircle} color="success" delay={0.15} />
-        <StatCard label="Level" value={profile?.level ?? 1} icon={TrendingUp} color="primary" delay={0.2} />
-        <StatCard label="Reyting" value={`#${formatNumber(stats.rank)}`} icon={Medal} color="primary" delay={0.25} />
+        <StatCard label={tx.streak} value={`${profile?.streak ?? 0} ${tx.streakUnit}`} icon={Flame} color="warning" delay={0.05} />
+        <StatCard label={tx.lessons} value={stats.lessonsCompleted} icon={BookOpen} color="accent" delay={0.1} />
+        <StatCard label={tx.exams} value={stats.examsPassed} icon={CheckCircle} color="success" delay={0.15} />
+        <StatCard label={tx.level} value={profile?.level ?? 1} icon={TrendingUp} color="primary" delay={0.2} />
+        <StatCard label={tx.rank} value={`#${formatNumber(stats.rank)}`} icon={Medal} color="primary" delay={0.25} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6 mb-8">
@@ -136,10 +224,10 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold flex items-center gap-2">
               <Clock className="w-4 h-4 text-primary" />
-              Haftalik faollik
+              {tx.weekly}
             </h3>
             <Badge variant="accent">
-              {weekly.reduce((s, d) => s + d.minutes, 0)} daqiqa
+              {weekly.reduce((s, d) => s + d.minutes, 0)} {tx.minutes}
             </Badge>
           </div>
           <div className="h-56">
@@ -161,7 +249,7 @@ export default function DashboardPage() {
                     borderRadius: "12px",
                   }}
                 />
-                <Area type="monotone" dataKey="minutes" stroke="var(--primary)" fill="url(#hoursGrad)" strokeWidth={2} name="Daqiqa" />
+                <Area type="monotone" dataKey="minutes" stroke="var(--primary)" fill="url(#hoursGrad)" strokeWidth={2} name={tx.minutes} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -170,23 +258,23 @@ export default function DashboardPage() {
         <Card delay={0.35}>
           <h3 className="font-semibold flex items-center gap-2 mb-4">
             <Award className="w-4 h-4 text-warning" />
-            Level {profile?.level ?? 1}
+            {tx.level} {profile?.level ?? 1}
           </h3>
           <ProgressBar value={levelProgress} className="mb-2" />
           <p className="text-xs text-text-muted mb-4">
-            {1000 - xpInLevel} XP keyingi levelga
+            {1000 - xpInLevel} XP {tx.nextLevel}
           </p>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between p-2 rounded-lg bg-surface-elevated/50">
-              <span className="text-text-muted">Total XP</span>
+              <span className="text-text-muted">{tx.totalXp}</span>
               <span className="font-bold">{(profile?.xp ?? 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between p-2 rounded-lg bg-surface-elevated/50">
-              <span className="text-text-muted">Streak</span>
-              <span className="font-bold">{profile?.streak ?? 0} kun</span>
+              <span className="text-text-muted">{tx.streak}</span>
+              <span className="font-bold">{profile?.streak ?? 0} {tx.streakUnit}</span>
             </div>
             <div className="flex justify-between p-2 rounded-lg bg-surface-elevated/50">
-              <span className="text-text-muted">Reyting</span>
+              <span className="text-text-muted">{tx.rank}</span>
               <span className="font-bold">#{stats.rank}</span>
             </div>
           </div>
@@ -197,25 +285,26 @@ export default function DashboardPage() {
         <Link href="/learning">
           <Card hover>
             <BookOpen className="w-8 h-8 text-primary mb-2" />
-            <p className="font-semibold">O&apos;rganishni davom ettirish</p>
-            <p className="text-xs text-text-muted mt-1">Roadmap bo&apos;yicha keyingi dars</p>
+            <p className="font-semibold">{tx.continueLearning}</p>
+            <p className="text-xs text-text-muted mt-1">{tx.nextLesson}</p>
           </Card>
         </Link>
         <Link href="/practice-exams">
           <Card hover>
             <CheckCircle className="w-8 h-8 text-accent mb-2" />
-            <p className="font-semibold">Practice Exam</p>
-            <p className="text-xs text-text-muted mt-1">Bilimingizni sinab ko&apos;ring</p>
+            <p className="font-semibold">{tx.practice}</p>
+            <p className="text-xs text-text-muted mt-1">{tx.testKnowledge}</p>
           </Card>
         </Link>
         <Link href="/ai-assistant">
           <Card hover>
             <Zap className="w-8 h-8 text-secondary mb-2" />
-            <p className="font-semibold">AI Assistant</p>
-            <p className="text-xs text-text-muted mt-1">Savollar bering, tushuntirishlar oling</p>
+            <p className="font-semibold">{tx.ai}</p>
+            <p className="text-xs text-text-muted mt-1">{tx.askAi}</p>
           </Card>
         </Link>
       </div>
     </div>
   );
 }
+

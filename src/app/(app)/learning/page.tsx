@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useAuth } from "@/contexts/AuthProvider";
+import { useLanguage } from "@/contexts/LanguageProvider";
 import { getLessonsBySubject } from "@/lib/data/curriculum";
 import { subjects } from "@/lib/data/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -16,7 +17,14 @@ import { useEffect, useMemo, useState } from "react";
 
 export default function LearningPage() {
   const { user } = useAuth();
+  const { language } = useLanguage();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
+  const tx = {
+    uz: { title: "Learning", description: "Fanni tanlang va roadmap bo'yicha harakat qiling", progress: "Progress", open: "Roadmapni ochish", flow: "Learning Flow", locked: "Qulflangan", available: "Ochiq", inProgress: "Jarayonda", completed: "Yakunlangan" },
+    kaa: { title: "Oqiw", description: "Pándi tańlap roadmap boyınsha júriń", progress: "Progress", open: "Roadmaptı ashıw", flow: "Oqıw aǵımı", locked: "Qulıplangan", available: "Ashıq", inProgress: "Jarayonda", completed: "Juwmaqlanǵan" },
+    ru: { title: "Обучение", description: "Выберите предмет и двигайтесь по roadmap", progress: "Прогресс", open: "Открыть roadmap", flow: "Схема обучения", locked: "Заблокировано", available: "Открыто", inProgress: "В процессе", completed: "Завершено" },
+    en: { title: "Learning", description: "Choose a subject and follow your roadmap", progress: "Progress", open: "Open Roadmap", flow: "Learning Flow", locked: "Locked", available: "Available", inProgress: "In Progress", completed: "Completed" },
+  }[language];
 
   useEffect(() => {
     if (!user) return;
@@ -58,8 +66,8 @@ export default function LearningPage() {
   return (
     <div>
       <PageHeader
-        title="Learning"
-        description="Choose a subject and follow your structured roadmap to mastery"
+        title={tx.title}
+        description={tx.description}
       />
 
       <div className="grid md:grid-cols-3 gap-6 mb-10">
@@ -92,13 +100,13 @@ export default function LearningPage() {
                   </div>
                   <div className="mt-6">
                     <div className="flex justify-between text-xs text-text-muted mb-1">
-                      <span>Progress</span>
+                      <span>{tx.progress}</span>
                       <span>{subjectProgress[subject.id] ?? 0}%</span>
                     </div>
                     <ProgressBar value={subjectProgress[subject.id] ?? 0} />
                   </div>
                   <div className="flex items-center gap-2 mt-4 text-primary text-sm font-medium group-hover:gap-3 transition-all">
-                    Open Roadmap <ArrowRight className="w-4 h-4" />
+                    {tx.open} <ArrowRight className="w-4 h-4" />
                   </div>
                 </div>
               </Card>
@@ -108,7 +116,7 @@ export default function LearningPage() {
       </div>
 
       <Card>
-        <h3 className="font-semibold mb-4">Learning Flow</h3>
+        <h3 className="font-semibold mb-4">{tx.flow}</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm text-text-muted">
           {["Subject", "Section", "Module", "Lesson", "Mini Exam", "Homework", "Final Exam"].map(
             (step, i, arr) => (
@@ -122,10 +130,10 @@ export default function LearningPage() {
           )}
         </div>
         <div className="flex flex-wrap gap-3 mt-6">
-          <Badge variant="muted"><Lock className="w-3 h-3 inline mr-1" />Locked</Badge>
-          <Badge variant="default">Available</Badge>
-          <Badge variant="accent">In Progress</Badge>
-          <Badge variant="success">Completed</Badge>
+          <Badge variant="muted"><Lock className="w-3 h-3 inline mr-1" />{tx.locked}</Badge>
+          <Badge variant="default">{tx.available}</Badge>
+          <Badge variant="accent">{tx.inProgress}</Badge>
+          <Badge variant="success">{tx.completed}</Badge>
         </div>
       </Card>
     </div>

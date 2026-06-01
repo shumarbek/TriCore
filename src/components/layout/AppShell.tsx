@@ -4,6 +4,7 @@ import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/contexts/AuthProvider";
+import { useLanguage } from "@/contexts/LanguageProvider";
 import { Ban } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -18,6 +19,7 @@ export function AppShell({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { profile, signOut } = useAuth();
+  const { t } = useLanguage();
   const router = useRouter();
   const banned = profile?.status === "banned";
 
@@ -38,10 +40,9 @@ export function AppShell({
         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-2xl border border-danger/40 bg-surface p-6 text-center shadow-2xl">
             <Ban className="w-10 h-10 text-danger mx-auto mb-3" />
-            <h2 className="text-xl font-bold">Akkount bloklangan</h2>
+            <h2 className="text-xl font-bold">{t.banned.title}</h2>
             <p className="text-sm text-text-muted mt-2">
-              Administrator sizning platformadan foydalanishingizni vaqtincha cheklagan.
-              Darslar va imtihonlardan foydalanish bloklandi.
+              {t.banned.body}
             </p>
             <Button
               variant="outline"
@@ -51,7 +52,7 @@ export function AppShell({
                 router.push("/login");
               }}
             >
-              Chiqish
+              {t.banned.action}
             </Button>
           </div>
         </div>
