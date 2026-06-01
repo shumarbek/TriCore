@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/contexts/AuthProvider";
 import { useLanguage } from "@/contexts/LanguageProvider";
 import { Ban } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function AppShell({
@@ -21,6 +21,7 @@ export function AppShell({
   const { profile, signOut } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
+  const pathname = usePathname();
   const banned = profile?.status === "banned";
 
   return (
@@ -34,7 +35,7 @@ export function AppShell({
       />
       <div className="flex-1 flex flex-col min-w-0">
         <Header onMenuClick={() => setMobileOpen(true)} />
-        <main className="flex-1 p-4 sm:p-6 overflow-auto">{children}</main>
+        <main key={pathname} className="flex-1 p-4 sm:p-6 overflow-auto">{children}</main>
       </div>
       {banned && (
         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">

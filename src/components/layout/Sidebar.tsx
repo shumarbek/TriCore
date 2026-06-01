@@ -1,15 +1,18 @@
 ﻿"use client";
 
 import { useLanguage } from "@/contexts/LanguageProvider";
+import { useAuth } from "@/contexts/AuthProvider";
 import { useTheme } from "@/contexts/ThemeProvider";
-import { getCurrentLessonPerSubject } from "@/lib/data/curriculum";
+import { buildRuntimeCurricula, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
 import { adminNavItems, mainNavItems } from "@/lib/data/navigation";
+import type { LessonContentOverride } from "@/lib/lesson-content";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { Atom, ChevronDown, ChevronLeft, Moon, Play, Sun, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 const subjectColors: Record<string, string> = {
   mathematics: "from-blue-500 to-cyan-400",
@@ -33,14 +36,20 @@ export function Sidebar({
   admin = false,
 }: SidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { t } = useLanguage();
   const items = admin ? adminNavItems : mainNavItems;
   const [lessonsOpen, setLessonsOpen] = useState(false);
-  const currentLessons = useMemo(
-    () => (!admin ? getCurrentLessonPerSubject() : []),
-    [admin]
-  );
+  const [currentLessons, setCurrentLessons] = useState<Array<{
+    subjectId: string;
+    subjectName: string;
+    subjectIcon: string;
+    lessonId: string;
+    lessonTitle: string;
+    sectionName: string;
+    subSectionName: string;
+  }>>([]);
   const isLessonsActive = pathname.startsWith("/lessons");
   const navLabels: Record<string, string> = {
     "/dashboard": t.nav.dashboard,
@@ -61,6 +70,92 @@ export function Sidebar({
     "/admin/analytics": t.nav.analytics,
     "/admin/ai-settings": t.nav.aiSettings,
   };
+
+  useEffect(() => {
+    if (admin) {
+      setCurrentLessons([]);
+      return;
+    }
+    const supabase = createClient();
+    const loadCurrentLessons = async () => {
+      const [{ data: lessonData }, { data: structureData }, progressResult] = await Promise.all([
+        supabase.from("lesson_content").select("*"),
+        supabase.from("curriculum_structure").select("*").order("order_index", { ascending: true }),
+        user
+          ? supabase.from("lesson_progress").select("lesson_id, status").eq("user_id", user.id)
+          : Promise.resolve({ data: [] as Array<{ lesson_id: string; status: string }> }),
+      ]);
+
+      const completedIds = new Set(
+        ((progressResult.data ?? []) as Array<{ lesson_id: string; status: string }>)
+          .filter((row) => row.status === "completed")
+          .map((row) => row.lesson_id)
+      );
+
+      const runtimeCurricula = buildRuntimeCurricula(
+        (structureData ?? []) as CurriculumStructureNode[],
+        (lessonData ?? []) as LessonContentOverride[]
+      );
+
+      const nextLessons = runtimeCurricula.map((subject) => {
+        for (const section of subject.sections) {
+          for (const subSection of section.subSections) {
+            const nextLesson = subSection.lessons.find((lesson) => !completedIds.has(lesson.id)) ?? subSection.lessons[0];
+            if (nextLesson) {
+              return {
+                subjectId: subject.id,
+                subjectName: subject.name,
+                subjectIcon: subject.id === "mathematics" ? "∑" : subject.id === "physics" ? "⚛" : "⚗",
+                lessonId: nextLesson.id,
+                lessonTitle: nextLesson.title,
+                sectionName: section.name,
+                subSectionName: subSection.name,
+              };
+            }
+          }
+        }
+        return {
+          subjectId: subject.id,
+          subjectName: subject.name,
+          subjectIcon: subject.id === "mathematics" ? "∑" : subject.id === "physics" ? "⚛" : "⚗",
+          lessonId: "",
+          lessonTitle: "—",
+          sectionName: "",
+          subSectionName: "",
+        };
+      });
+
+      setCurrentLessons(nextLessons);
+    };
+
+    void loadCurrentLessons();
+
+    const channels = [
+      supabase
+        .channel("sidebar-lesson-content")
+        .on("postgres_changes", { event: "*", schema: "public", table: "lesson_content" }, () => void loadCurrentLessons())
+        .subscribe(),
+      supabase
+        .channel("sidebar-curriculum-structure")
+        .on("postgres_changes", { event: "*", schema: "public", table: "curriculum_structure" }, () => void loadCurrentLessons())
+        .subscribe(),
+    ];
+
+    if (user) {
+      channels.push(
+        supabase
+          .channel(`sidebar-progress-${user.id}`)
+          .on("postgres_changes", { event: "*", schema: "public", table: "lesson_progress", filter: `user_id=eq.${user.id}` }, () => void loadCurrentLessons())
+          .subscribe()
+      );
+    }
+
+    return () => {
+      channels.forEach((channel) => {
+        supabase.removeChannel(channel);
+      });
+    };
+  }, [admin, user]);
 
   const content = (
     <aside
@@ -262,7 +357,7 @@ export function Sidebar({
             href="/admin"
             className="block text-center text-xs text-text-muted hover:text-primary py-2"
           >
-            {t.common.adminPanel} -&gt;
+            {t.common.adminPanel} {"->"}
           </Link>
         )}
         <button

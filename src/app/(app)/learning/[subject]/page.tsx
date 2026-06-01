@@ -8,7 +8,6 @@ import { useAuth } from "@/contexts/AuthProvider";
 import { useLanguage } from "@/contexts/LanguageProvider";
 import type { SubjectCurriculum } from "@/lib/data/curriculum";
 import { buildRuntimeCurricula, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
-import { subjects } from "@/lib/data/navigation";
 import type { LessonContentOverride } from "@/lib/lesson-content";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -29,7 +28,6 @@ export default function SubjectRoadmapPage() {
   const subjectId = params.subject as string;
   const { user } = useAuth();
   const { language } = useLanguage();
-  const subject = subjects.find((s) => s.id === subjectId);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const supabase = useMemo(() => createClient(), []);
   const [contentRows, setContentRows] = useState<LessonContentOverride[]>([]);
@@ -84,6 +82,15 @@ export default function SubjectRoadmapPage() {
   const displayCurriculum = useMemo<SubjectCurriculum | null>(() => {
     return buildRuntimeCurricula(structureRows, contentRows).find((item) => item.id === subjectId) ?? null;
   }, [contentRows, structureRows, subjectId]);
+
+  const subjectMeta = useMemo(() => {
+    if (!displayCurriculum) return null;
+    return {
+      id: displayCurriculum.id,
+      name: displayCurriculum.name,
+      icon: displayCurriculum.id === "mathematics" ? "∑" : displayCurriculum.id === "physics" ? "⚛" : "⚗",
+    };
+  }, [displayCurriculum]);
 
   useEffect(() => {
     const loadCurriculum = async () => {
@@ -173,14 +180,14 @@ export default function SubjectRoadmapPage() {
         .find((l) => l.id === firstPendingId)
     : null;
 
-  if (!subject || !displayCurriculum) {
+  if (!subjectMeta || !displayCurriculum) {
     return <p className="text-text-muted">{tx.notFound}</p>;
   }
 
   return (
     <div>
       <PageHeader
-        title={subject.name}
+        title={subjectMeta.name}
         description={tx.description}
         action={
           continueLesson ? (
@@ -195,7 +202,7 @@ export default function SubjectRoadmapPage() {
         {displayCurriculum.sections.map((section, si) => (
           <Card key={section.id} delay={si * 0.05}>
             <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
-              <span className="text-2xl">{subject.icon}</span>
+              <span className="text-2xl">{subjectMeta.icon}</span>
               {section.name}
             </h3>
             <p className="text-xs text-text-muted mb-4">

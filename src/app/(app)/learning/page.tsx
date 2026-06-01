@@ -6,8 +6,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useAuth } from "@/contexts/AuthProvider";
 import { useLanguage } from "@/contexts/LanguageProvider";
-import { getLessonsBySubject } from "@/lib/data/curriculum";
-import { subjects } from "@/lib/data/navigation";
+import { buildRuntimeCurricula, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
+import type { LessonContentOverride } from "@/lib/lesson-content";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -19,6 +19,8 @@ export default function LearningPage() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
+  const [contentRows, setContentRows] = useState<LessonContentOverride[]>([]);
+  const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
   const tx = {
     uz: { title: "Learning", description: "Fanni tanlang va roadmap bo'yicha harakat qiling", progress: "Progress", open: "Roadmapni ochish", flow: "Learning Flow", locked: "Qulflangan", available: "Ochiq", inProgress: "Jarayonda", completed: "Yakunlangan" },
     kaa: { title: "Oqiw", description: "Pándi tańlap roadmap boyınsha júriń", progress: "Progress", open: "Roadmaptı ashıw", flow: "Oqıw aǵımı", locked: "Qulıplangan", available: "Ashıq", inProgress: "Jarayonda", completed: "Juwmaqlanǵan" },
@@ -27,41 +29,85 @@ export default function LearningPage() {
   }[language];
 
   useEffect(() => {
-    if (!user) return;
     const supabase = createClient();
     const load = async () => {
-      const { data } = await supabase
-        .from("lesson_progress")
-        .select("lesson_id, status")
-        .eq("user_id", user.id);
-      const rows = (data ?? []) as Array<{ lesson_id: string; status: string }>;
+      const [progressResult, lessonResult, structureResult] = await Promise.all([
+        user
+          ? supabase.from("lesson_progress").select("lesson_id, status").eq("user_id", user.id)
+          : Promise.resolve({ data: [] as Array<{ lesson_id: string; status: string }> }),
+        supabase.from("lesson_content").select("*"),
+        supabase.from("curriculum_structure").select("*").order("order_index", { ascending: true }),
+      ]);
+
+      const rows = (progressResult.data ?? []) as Array<{ lesson_id: string; status: string }>;
       const done = new Set(rows.filter((x) => x.status === "completed").map((x) => x.lesson_id));
       setCompletedIds(done);
+      setContentRows((lessonResult.data ?? []) as LessonContentOverride[]);
+      setStructureRows((structureResult.data ?? []) as CurriculumStructureNode[]);
     };
-    load();
-    const channel = supabase
-      .channel(`learning-progress-${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "lesson_progress", filter: `user_id=eq.${user.id}` },
-        () => load()
-      )
-      .subscribe();
+    void load();
+    const channels = [
+      supabase
+        .channel(`learning-curriculum-structure`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "curriculum_structure" }, () => void load())
+        .subscribe(),
+      supabase
+        .channel(`learning-lesson-content`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "lesson_content" }, () => void load())
+        .subscribe(),
+    ];
+
+    if (user) {
+      channels.push(
+        supabase
+          .channel(`learning-progress-${user.id}`)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "lesson_progress", filter: `user_id=eq.${user.id}` },
+            () => void load()
+          )
+          .subscribe()
+      );
+    }
+
     return () => {
-      supabase.removeChannel(channel);
+      channels.forEach((channel) => {
+        supabase.removeChannel(channel);
+      });
     };
   }, [user]);
 
+  const runtimeSubjects = useMemo(() => {
+    return buildRuntimeCurricula(structureRows, contentRows).map((subject) => ({
+      id: subject.id,
+      name: subject.name,
+      icon: subject.id === "mathematics" ? "∑" : subject.id === "physics" ? "⚛" : "⚗",
+      color:
+        subject.id === "mathematics"
+          ? "from-blue-500 to-cyan-400"
+          : subject.id === "physics"
+            ? "from-violet-500 to-purple-400"
+            : "from-emerald-500 to-teal-400",
+      sections: subject.sections.map((section) => section.name),
+      lessonCount: subject.sections.reduce(
+        (total, section) => total + section.subSections.reduce((sum, subSection) => sum + subSection.lessons.length, 0),
+        0
+      ),
+    }));
+  }, [contentRows, structureRows]);
+
   const subjectProgress = useMemo(() => {
     return Object.fromEntries(
-      subjects.map((s) => {
-        const lessons = getLessonsBySubject(s.id);
-        const completed = lessons.filter((l) => completedIds.has(l.id)).length;
-        const progress = lessons.length ? Math.round((completed / lessons.length) * 100) : 0;
-        return [s.id, progress];
+      runtimeSubjects.map((subject) => {
+        const completed = buildRuntimeCurricula(structureRows, contentRows)
+          .find((item) => item.id === subject.id)
+          ?.sections.flatMap((section) => section.subSections.flatMap((subSection) => subSection.lessons))
+          .filter((lesson) => completedIds.has(lesson.id)).length ?? 0;
+        const progress = subject.lessonCount ? Math.round((completed / subject.lessonCount) * 100) : 0;
+        return [subject.id, progress];
       })
     ) as Record<string, number>;
-  }, [completedIds]);
+  }, [completedIds, runtimeSubjects, structureRows, contentRows]);
 
   return (
     <div>
@@ -71,7 +117,7 @@ export default function LearningPage() {
       />
 
       <div className="grid md:grid-cols-3 gap-6 mb-10">
-        {subjects.map((subject, i) => (
+        {runtimeSubjects.map((subject, i) => (
           <Link key={subject.id} href={`/learning/${subject.id}`}>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
