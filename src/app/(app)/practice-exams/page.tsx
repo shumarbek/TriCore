@@ -32,6 +32,14 @@ interface ExamQuestion {
   explanation: string;
 }
 
+interface PracticeHistoryItem {
+  id: string;
+  title: string;
+  section: string;
+  score: number;
+  date: string;
+}
+
 function shuffleQuestions<T>(items: T[]) {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -79,11 +87,15 @@ export default function PracticeExamsPage() {
   const [examStartedAt, setExamStartedAt] = useState<number | null>(null);
   const [examOpen, setExamOpen] = useState(false);
   const [examWarning, setExamWarning] = useState("");
+  const [guardError, setGuardError] = useState("");
   const [cheatAttempts, setCheatAttempts] = useState(0);
   const [blockedUntil, setBlockedUntil] = useState<string | null>(null);
   const [remainingBlockMs, setRemainingBlockMs] = useState(0);
   const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
+  const [history, setHistory] = useState<PracticeHistoryItem[]>([]);
   const activityCommittedRef = useRef(false);
+  const examOpenRef = useRef(false);
+  const latestCheatAttemptsRef = useRef(0);
   const supabase = useMemo(() => createClient(), []);
   const runtimeCurricula = useMemo(() => buildRuntimeCurricula(structureRows), [structureRows]);
 
@@ -110,6 +122,14 @@ export default function PracticeExamsPage() {
       supabase.removeChannel(channel);
     };
   }, [supabase]);
+
+  useEffect(() => {
+    examOpenRef.current = examOpen;
+  }, [examOpen]);
+
+  useEffect(() => {
+    latestCheatAttemptsRef.current = cheatAttempts;
+  }, [cheatAttempts]);
 
   useEffect(() => {
     if (!blockedUntil) {
@@ -172,12 +192,21 @@ export default function PracticeExamsPage() {
   useEffect(() => {
     if (!user) return;
     const loadGuard = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("practice_exam_guard")
         .select("cheat_attempts, blocked_until")
         .eq("user_id", user.id)
         .eq("guard_date", getTodayKey())
         .maybeSingle();
+      if (error) {
+        setGuardError(
+          error.message.includes("practice_exam_guard")
+            ? "Supabase practice_exam_guard jadvali hali qo'llanmagan. practice_exam_guard_migration.sql ni run qiling."
+            : error.message
+        );
+        return;
+      }
+      setGuardError("");
       const row = data as { cheat_attempts?: number; blocked_until?: string | null } | null;
       setCheatAttempts(row?.cheat_attempts ?? 0);
       const nextBlockedUntil = row?.blocked_until ?? null;
@@ -185,6 +214,70 @@ export default function PracticeExamsPage() {
     };
     void loadGuard();
   }, [supabase, user]);
+
+  useEffect(() => {
+    if (!user || runtimeCurricula.length === 0) return;
+    const loadHistory = async () => {
+      const validSubSectionIds = new Set(
+        runtimeCurricula.flatMap((subject) =>
+          subject.sections.flatMap((section) => section.subSections.map((subSection) => subSection.id))
+        )
+      );
+      const { data } = await supabase
+        .from("exam_results")
+        .select("id, subject_id, section_id, sub_section_id, score, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      const rows = (data ?? []) as Array<{
+        id: string;
+        subject_id: string;
+        section_id: string;
+        sub_section_id: string;
+        score: number;
+        created_at: string;
+      }>;
+
+      const items = rows
+        .filter((row) => row.sub_section_id === "all" || validSubSectionIds.has(row.sub_section_id))
+        .map((row) => {
+          const label = getRuntimeExamScopeLabel(
+            runtimeCurricula,
+            row.subject_id,
+            row.section_id,
+            row.sub_section_id
+          );
+          const [sectionLabel, subSectionLabel] = label.split(" -> ");
+          return {
+            id: row.id,
+            title: subSectionLabel || label || "Practice Exam",
+            section: sectionLabel || row.section_id,
+            score: row.score,
+            date: new Date(row.created_at).toLocaleString(),
+          };
+        });
+
+      setHistory(items);
+    };
+
+    void loadHistory();
+
+    const channel = supabase
+      .channel(`practice-history-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "exam_results", filter: `user_id=eq.${user.id}` },
+        () => {
+          void loadHistory();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [runtimeCurricula, supabase, user]);
 
   const scopeLabel = useMemo(
     () =>
@@ -235,7 +328,7 @@ export default function PracticeExamsPage() {
     const nextAttempts = cheatAttempts + 1;
     const nextBlockedUntil = nextAttempts >= 3 ? getEndOfTodayIso() : null;
     await commitRealExamTime();
-    await supabase.from("practice_exam_guard").upsert(
+    const { error } = await supabase.from("practice_exam_guard").upsert(
       {
         user_id: user.id,
         guard_date: getTodayKey(),
@@ -246,6 +339,15 @@ export default function PracticeExamsPage() {
       } as never,
       { onConflict: "user_id,guard_date" }
     );
+    if (error) {
+      setGuardError(
+        error.message.includes("practice_exam_guard")
+          ? "Supabase practice_exam_guard jadvali hali qo'llanmagan. practice_exam_guard_migration.sql ni run qiling."
+          : error.message
+      );
+    } else {
+      setGuardError("");
+    }
     setCheatAttempts(nextAttempts);
     setBlockedUntil(nextBlockedUntil);
     resetExamSession();
@@ -271,11 +373,33 @@ export default function PracticeExamsPage() {
 
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("blur", handleBlur);
+    window.addEventListener("pagehide", handleBlur);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("pagehide", handleBlur);
     };
   }, [examOpen, cheatAttempts]);
+
+  useEffect(() => {
+    return () => {
+      if (examOpenRef.current && user) {
+        void commitRealExamTime();
+        const nextAttempts = latestCheatAttemptsRef.current + 1;
+        void supabase.from("practice_exam_guard").upsert(
+          {
+            user_id: user.id,
+            guard_date: getTodayKey(),
+            cheat_attempts: nextAttempts,
+            blocked_until: nextAttempts >= 3 ? getEndOfTodayIso() : null,
+            last_reason: "route-leave",
+            updated_at: new Date().toISOString(),
+          } as never,
+          { onConflict: "user_id,guard_date" }
+        );
+      }
+    };
+  }, [supabase, user]);
 
   const startExam = async () => {
     if (!user || !effectiveSectionId || (blockedUntil && new Date(blockedUntil).getTime() > Date.now())) return;
@@ -401,6 +525,12 @@ export default function PracticeExamsPage() {
           </div>
         )}
 
+        {guardError && (
+          <div className="mt-4 rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
+            {guardError}
+          </div>
+        )}
+
         {blockedUntil && remainingBlockMs > 0 && (
           <div className="mt-4 rounded-xl border border-danger/30 bg-danger/10 p-4">
             <p className="text-sm font-medium text-danger">Practice Exam bugun uchun bloklangan</p>
@@ -467,21 +597,14 @@ export default function PracticeExamsPage() {
 
       <h3 className="font-semibold mt-10 mb-4">So'nggi practice imtihonlar</h3>
       <div className="space-y-3">
-        {[
-          {
-            title: "Molekulyar fizika asoslari",
-            section: "#3 Molekulyar fizika va termodinamika",
-            score: 88,
-            date: "May 20",
-          },
-          {
-            title: "Planimetriya - All",
-            section: "#2 Geometriya",
-            score: 76,
-            date: "May 18",
-          },
-        ].map((exam) => (
-          <Card key={exam.title} hover>
+        {history.length === 0 ? (
+          <Card>
+            <p className="text-sm text-text-muted">
+              Hali practice exam ishlanmagan. Birinchi urinish shu yerda ko&apos;rinadi.
+            </p>
+          </Card>
+        ) : history.map((exam) => (
+          <Card key={exam.id} hover>
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="font-medium">{exam.title}</p>

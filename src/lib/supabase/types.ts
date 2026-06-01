@@ -156,6 +156,7 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
+          lesson_id: string | null;
           subject: string;
           body: string;
           status: "open" | "replied" | "closed";
@@ -166,6 +167,7 @@ export interface Database {
         Insert: {
           id?: string;
           user_id: string;
+          lesson_id?: string | null;
           subject: string;
           body: string;
           status?: "open" | "replied" | "closed";

@@ -64,6 +64,7 @@ export function buildRuntimeCurricula(
             const subOverride = subRows.find((row) => row.node_id === subSection.id);
             if (subOverride?.is_deleted) return null;
             return {
+              _order: subOverride?.order_index ?? section.subSections.findIndex((item) => item.id === subSection.id),
               ...cloneSubSection(subSection),
               name: subOverride?.name || subSection.name,
               lessons: [
@@ -92,13 +93,14 @@ export function buildRuntimeCurricula(
               ].sort((a, b) => a.order - b.order),
             };
           })
-          .filter(Boolean) as SubSection[];
+          .filter(Boolean) as Array<SubSection & { _order: number }>;
 
         const customSubSections = subRows
           .filter(
             (row) => !row.is_deleted && !section.subSections.some((subSection) => subSection.id === row.node_id)
           )
           .map((row) => ({
+            _order: row.order_index,
             id: row.node_id,
             name: row.name,
             lessons: lessonRows
@@ -121,9 +123,9 @@ export function buildRuntimeCurricula(
           ...cloneSection(section),
           name: override?.name || section.name,
           order: override?.order_index ?? section.order,
-          subSections: [...subSections, ...customSubSections].sort((a, b) =>
-            a.name.localeCompare(b.name)
-          ),
+          subSections: [...subSections, ...customSubSections]
+            .sort((a, b) => a._order - b._order)
+            .map(({ _order, ...subSection }) => subSection),
         };
       })
       .filter(Boolean) as CurriculumSection[];

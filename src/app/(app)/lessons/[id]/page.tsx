@@ -64,6 +64,12 @@ export default function LessonDetailPage() {
     xpAwarded: number;
   } | null>(null);
   const [miniExamRewardClaimed, setMiniExamRewardClaimed] = useState(false);
+  const [discussionMessages, setDiscussionMessages] = useState<
+    Array<{ id: string; body: string; admin_reply: string | null; created_at: string; replied_at: string | null; status: string }>
+  >([]);
+  const [discussionBody, setDiscussionBody] = useState("");
+  const [discussionBusy, setDiscussionBusy] = useState(false);
+  const [discussionError, setDiscussionError] = useState("");
   const [noteContent, setNoteContent] = useState(
     "# Dars qaydlari\n\n- Muhim punktlar\n- Misollar\n- Savollar"
   );
@@ -223,6 +229,43 @@ export default function LessonDetailPage() {
     void loadMiniExamState();
   }, [effectiveMeta?.sectionId, effectiveMeta?.subjectId, lesson, miniExamQuestions.length, supabase, user]);
 
+  useEffect(() => {
+    if (!user || !lesson) return;
+    const loadDiscussion = async () => {
+      const { data } = await supabase
+        .from("messages")
+        .select("id, body, admin_reply, created_at, replied_at, status")
+        .eq("user_id", user.id)
+        .eq("lesson_id", lesson.id)
+        .order("created_at", { ascending: false });
+      setDiscussionMessages(
+        ((data ?? []) as Array<{
+          id: string;
+          body: string;
+          admin_reply: string | null;
+          created_at: string;
+          replied_at: string | null;
+          status: string;
+        }>)
+      );
+    };
+
+    void loadDiscussion();
+    const channel = supabase
+      .channel(`lesson-discussion-${user.id}-${lesson.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages", filter: `user_id=eq.${user.id}` },
+        () => {
+          void loadDiscussion();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [lesson, supabase, user]);
+
   const markLessonCompleted = async () => {
     if (!user || !effectiveMeta || !lesson || isCompleted || !isUnlocked) return;
     setBusy(true);
@@ -308,6 +351,26 @@ export default function LessonDetailPage() {
     requestAnimationFrame(() => {
       handbookCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  };
+
+  const sendDiscussionMessage = async () => {
+    if (!user || !lesson || !discussionBody.trim()) return;
+    setDiscussionBusy(true);
+    setDiscussionError("");
+    const { error } = await supabase.from("messages").insert({
+      user_id: user.id,
+      lesson_id: lesson.id,
+      subject: `Lesson Discussion: ${effectiveTitle}`,
+      body: discussionBody.trim(),
+      status: "open",
+    } as never);
+    if (error) {
+      setDiscussionError(error.message);
+      setDiscussionBusy(false);
+      return;
+    }
+    setDiscussionBody("");
+    setDiscussionBusy(false);
   };
 
   const tabIcons: Partial<Record<(typeof tabs)[number], React.ComponentType<{ className?: string }>>> = {
@@ -554,14 +617,48 @@ export default function LessonDetailPage() {
 
             {activeTab === "Discussion" && (
               <div className="space-y-4">
-                <div className="p-3 rounded-xl bg-surface-elevated">
-                  <p className="text-sm font-medium">Savol namunasi</p>
-                  <p className="text-xs text-text-muted mt-1">Admin · Javob</p>
-                </div>
-                <Textarea placeholder="Savol yozing..." />
-                <Button variant="primary" size="sm">
+                <p className="text-sm text-text-muted">
+                  Shu dars bo&apos;yicha savol yoki muhokama yuboring. Admin javobi shu yerning o&apos;zida chiqadi.
+                </p>
+                {discussionError && (
+                  <div className="rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
+                    {discussionError}
+                  </div>
+                )}
+                <Textarea
+                  placeholder="Savol yozing..."
+                  value={discussionBody}
+                  onChange={(event) => setDiscussionBody(event.target.value)}
+                />
+                <Button variant="primary" size="sm" onClick={sendDiscussionMessage} loading={discussionBusy}>
                   Yuborish
                 </Button>
+                <div className="space-y-3">
+                  {discussionMessages.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border p-4 text-sm text-text-muted">
+                      Hali discussion yo&apos;q. Birinchi savolni yuboring.
+                    </div>
+                  ) : (
+                    discussionMessages.map((message) => (
+                      <div key={message.id} className="rounded-xl border border-border overflow-hidden">
+                        <div className="p-4 bg-surface-elevated/50">
+                          <p className="text-xs text-text-muted">
+                            Siz · {new Date(message.created_at).toLocaleString()}
+                          </p>
+                          <p className="text-sm mt-2">{message.body}</p>
+                        </div>
+                        {message.admin_reply && (
+                          <div className="p-4 bg-primary/10 border-t border-primary/20">
+                            <p className="text-xs text-primary">
+                              Admin · {message.replied_at ? new Date(message.replied_at).toLocaleString() : ""}
+                            </p>
+                            <p className="text-sm mt-2">{message.admin_reply}</p>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </Card>

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 interface Msg {
   id: string;
   user_id: string;
+  lesson_id?: string | null;
   subject: string;
   body: string;
   status: "open" | "replied" | "closed";
@@ -26,6 +27,7 @@ export default function AdminMessagesPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [reply, setReply] = useState("");
+  const [filter, setFilter] = useState<"all" | "support" | "lesson">("all");
   const supabase = useMemo(() => createClient(), []);
 
   const load = useCallback(async () => {
@@ -51,6 +53,24 @@ export default function AdminMessagesPage() {
   }, [supabase, load]);
 
   const selected = messages.find((m) => m.id === selectedId);
+  const filteredMessages = messages.filter((message) => {
+    if (filter === "support") return !message.lesson_id;
+    if (filter === "lesson") return Boolean(message.lesson_id);
+    return true;
+  });
+
+  const openCount = filteredMessages.filter((message) => message.status === "open").length;
+
+  useEffect(() => {
+    if (filteredMessages.length === 0) {
+      setSelectedId("");
+      return;
+    }
+    if (!filteredMessages.some((message) => message.id === selectedId)) {
+      setSelectedId(filteredMessages[0].id);
+      setReply(filteredMessages[0].admin_reply ?? "");
+    }
+  }, [filteredMessages, selectedId]);
 
   const sendReply = async () => {
     if (!selected || !reply.trim()) return;
@@ -81,11 +101,36 @@ export default function AdminMessagesPage() {
 
       <div className="grid lg:grid-cols-3 gap-6 h-[calc(100%-5rem)]">
         <Card className="lg:col-span-1 flex flex-col min-h-[400px] overflow-hidden">
-          <p className="text-sm font-medium mb-3">
-            Xabarlar ({messages.filter((m) => m.status === "open").length} ochiq)
-          </p>
+          <div className="mb-3">
+            <p className="text-sm font-medium">
+              Xabarlar ({openCount} ochiq)
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                variant={filter === "all" ? "primary" : "outline"}
+                size="sm"
+                onClick={() => setFilter("all")}
+              >
+                Barchasi
+              </Button>
+              <Button
+                variant={filter === "support" ? "primary" : "outline"}
+                size="sm"
+                onClick={() => setFilter("support")}
+              >
+                Support
+              </Button>
+              <Button
+                variant={filter === "lesson" ? "primary" : "outline"}
+                size="sm"
+                onClick={() => setFilter("lesson")}
+              >
+                Lesson Discussion
+              </Button>
+            </div>
+          </div>
           <ul className="flex-1 overflow-y-auto space-y-1">
-            {messages.map((m) => (
+            {filteredMessages.map((m) => (
               <li key={m.id}>
                 <button
                   type="button"
@@ -105,11 +150,22 @@ export default function AdminMessagesPage() {
                     <Badge variant={statusBadge[m.status]}>{m.status}</Badge>
                   </div>
                   <p className="text-xs text-text-muted truncate">{m.subject}</p>
+                  {m.lesson_id && (
+                    <p className="text-[10px] text-primary truncate">Lesson: {m.lesson_id}</p>
+                  )}
+                  {!m.lesson_id && (
+                    <p className="text-[10px] text-accent truncate">Support message</p>
+                  )}
                   <p className="text-[10px] text-text-muted">{new Date(m.created_at).toLocaleString()}</p>
                 </button>
               </li>
             ))}
           </ul>
+          {filteredMessages.length === 0 && (
+            <p className="text-sm text-text-muted py-6 text-center">
+              Tanlangan filter bo&apos;yicha xabar topilmadi.
+            </p>
+          )}
         </Card>
 
         <Card className="lg:col-span-2 flex flex-col min-h-[400px]">
@@ -120,6 +176,7 @@ export default function AdminMessagesPage() {
                   <Mail className="w-4 h-4 text-primary" />
                   <h3 className="font-semibold">{selected.subject}</h3>
                   <Badge variant={statusBadge[selected.status]}>{selected.status}</Badge>
+                  {selected.lesson_id && <Badge variant="accent">{selected.lesson_id}</Badge>}
                 </div>
                                 <p className="text-sm text-text-muted mt-1">
                   {selected.profiles?.full_name ?? "User"} · {selected.profiles?.email ?? ""}

@@ -101,6 +101,7 @@ create table if not exists public.practice_exam_guard (
 create table if not exists public.messages (
   id uuid default gen_random_uuid() primary key,
   user_id uuid references public.profiles(id) on delete cascade not null,
+  lesson_id text,
   subject text not null,
   body text not null,
   status text not null default 'open' check (status in ('open', 'replied', 'closed')),
@@ -312,6 +313,7 @@ create index if not exists idx_exam_results_user on public.exam_results(user_id)
 create index if not exists idx_practice_exam_guard_user on public.practice_exam_guard(user_id, guard_date);
 create index if not exists idx_messages_user on public.messages(user_id);
 create index if not exists idx_messages_status on public.messages(status);
+create index if not exists idx_messages_lesson on public.messages(lesson_id);
 create index if not exists idx_notes_user on public.notes(user_id);
 create index if not exists idx_curriculum_structure_subject on public.curriculum_structure(subject_id, node_type, parent_section_id);
 create index if not exists idx_daily_activity_user_date on public.daily_activity(user_id, date);
