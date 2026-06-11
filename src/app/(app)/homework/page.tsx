@@ -8,10 +8,11 @@ import { useAuth } from "@/contexts/AuthProvider";
 import { useLanguage } from "@/contexts/LanguageProvider";
 import { buildRuntimeCurricula, findRuntimeLessonById, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
 import type { LessonContentOverride } from "@/lib/lesson-content";
+import { useLiveRefresh } from "@/lib/live-refresh";
 import { createClient } from "@/lib/supabase/client";
 import { BookOpen, Download, Info } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export default function HomeworkPage() {
   const { user } = useAuth();
@@ -20,6 +21,7 @@ export default function HomeworkPage() {
   const [homeworkLinks, setHomeworkLinks] = useState<Record<string, string>>({});
   const [lessonRows, setLessonRows] = useState<LessonContentOverride[]>([]);
   const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
+  const supabase = useMemo(() => createClient(), []);
   const runtimeCurricula = useMemo(() => buildRuntimeCurricula(structureRows, lessonRows), [lessonRows, structureRows]);
   const tx = {
     uz: { title: "Uy vazifalari", description: "Har bir fan bo'limidagi eng so'nggi yakunlangan dars uchun vazifalar", info: "Bu yerda faqat har bir bo'lim bo'yicha oxirgi yakunlangan darsning uy vazifasi ko'rsatiladi. Boshqa darslarning vazifalari o'z dars sahifasidagi Uy vazifasi bo'limida qoladi.", empty: "Hozircha bo'lim uy vazifasi yo'q. Darslarni yakunlang.", ready: "Link tayyor", lastLesson: "Oxirgi o'tilgan dars", download: "Yuklab olish", goLesson: "Darsga o'tish", titleSuffix: "uy vazifasi" },
@@ -28,10 +30,12 @@ export default function HomeworkPage() {
     en: { title: "Homework", description: "Assignments for the latest completed lesson in each subject section", info: "Only the homework for the latest completed lesson in each section is shown here. Other lesson-specific tasks remain inside that lesson's homework tab.", empty: "No section homework yet. Complete lessons first.", ready: "Link ready", lastLesson: "Latest completed lesson", download: "Download", goLesson: "Open lesson", titleSuffix: "homework" },
   }[language];
 
-  useEffect(() => {
-    if (!user) return;
-    const supabase = createClient();
-    const load = async () => {
+  const load = useCallback(async () => {
+    if (!user) {
+      setCompletedLessonIds([]);
+      setHomeworkLinks({});
+      return;
+    }
       const [{ data: progressRows }, { data: homeworkData }, { data: lessonData }, { data: structureData }] = await Promise.all([
         supabase.from("lesson_progress").select("lesson_id").eq("user_id", user.id).eq("status", "completed").order("completed_at", { ascending: false }),
         supabase.from("lesson_content").select("lesson_id, homework_pdf"),
@@ -42,9 +46,37 @@ export default function HomeworkPage() {
       setHomeworkLinks(Object.fromEntries(((homeworkData ?? []) as Array<{ lesson_id: string; homework_pdf: string }>).map((row) => [row.lesson_id, row.homework_pdf])));
       setLessonRows((lessonData ?? []) as LessonContentOverride[]);
       setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
-    };
+  }, [supabase, user]);
+
+  useLiveRefresh(() => {
     void load();
-  }, [user]);
+  });
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void load();
+    });
+    const channels = [
+      supabase
+        .channel("homework-lesson-progress")
+        .on("postgres_changes", { event: "*", schema: "public", table: "lesson_progress" }, () => void load())
+        .subscribe(),
+      supabase
+        .channel("homework-lesson-content")
+        .on("postgres_changes", { event: "*", schema: "public", table: "lesson_content" }, () => void load())
+        .subscribe(),
+      supabase
+        .channel("homework-curriculum-structure")
+        .on("postgres_changes", { event: "*", schema: "public", table: "curriculum_structure" }, () => void load())
+        .subscribe(),
+    ];
+
+    return () => {
+      channels.forEach((channel) => {
+        supabase.removeChannel(channel);
+      });
+    };
+  }, [load, supabase]);
 
   const homeworkItems = useMemo(() => {
     const latestBySection = new Map<string, ReturnType<typeof findRuntimeLessonById>>();

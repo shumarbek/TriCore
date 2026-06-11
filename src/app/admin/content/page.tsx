@@ -10,7 +10,6 @@ import { Input, Select, Textarea } from "@/components/ui/Input";
 import { useAuth } from "@/contexts/AuthProvider";
 import {
   getAdminLessonStats,
-  getAdminLessons,
   type LessonAdminData,
 } from "@/lib/data/admin-lessons";
 import { curricula } from "@/lib/data/curriculum";
@@ -21,6 +20,7 @@ import {
   type CurriculumStructureNode,
 } from "@/lib/data/curriculum/runtime";
 import { toLessonContentOverride, type LessonContentOverride } from "@/lib/lesson-content";
+import { notifyDataChanged, useLiveRefresh } from "@/lib/live-refresh";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { BookOpen, FolderPlus, Layers, Pencil, Plus, Search, Trash2, Video } from "lucide-react";
@@ -46,6 +46,14 @@ function formatSaveError(message: string) {
   return isMissingLessonContentMetadataError(message)
     ? `${LESSON_CONTENT_MIGRATION_MESSAGE} Asl xato: ${message}`
     : message;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function createUniqueId(prefix: string) {
+  return `${prefix}-${crypto.randomUUID()}`;
 }
 
 function mergeLessons(
@@ -140,6 +148,7 @@ export default function AdminContentPage() {
   const [editing, setEditing] = useState<LessonAdminData | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [structureBusy, setStructureBusy] = useState(false);
+  const [actionBusy, setActionBusy] = useState<"save" | "add" | "delete" | null>(null);
 
   const [newLesson, setNewLesson] = useState({
     subjectId: "mathematics",
@@ -161,65 +170,65 @@ export default function AdminContentPage() {
   );
 
   const loadLessons = useCallback(async () => {
-    const { data: structureData } = await supabase
-      .from("curriculum_structure")
-      .select("*")
-      .order("order_index", { ascending: true });
-    setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
+    setLoading(true);
+    try {
+      const { data: structureData, error: structureError } = await supabase
+        .from("curriculum_structure")
+        .select("*")
+        .order("order_index", { ascending: true });
+      if (structureError) throw structureError;
+      setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
 
-    const { error: schemaError } = await supabase
-      .from("lesson_content")
-      .select("lesson_id, subject_id, order_index")
-      .limit(1);
+      const { error: schemaError } = await supabase
+        .from("lesson_content")
+        .select("lesson_id, subject_id, order_index")
+        .limit(1);
 
-    setSchemaWarning(
-      schemaError && isMissingLessonContentMetadataError(schemaError.message)
-        ? formatSaveError(schemaError.message)
-        : ""
-    );
+      setSchemaWarning(
+        schemaError && isMissingLessonContentMetadataError(schemaError.message)
+          ? formatSaveError(schemaError.message)
+          : ""
+      );
 
-    const { data, error } = await supabase.from("lesson_content").select("*");
-    if (error) {
-      setSaveError(formatSaveError(error.message));
-      setLessons(getAdminLessons());
+      const { data, error } = await supabase.from("lesson_content").select("*");
+      if (error) throw error;
+
+      const rows = (data ?? []) as Array<{
+        lesson_id: string;
+        title: string;
+        subject_id?: string;
+        subject_name?: string;
+        section_id?: string;
+        section_name?: string;
+        sub_section_id?: string;
+        sub_section_name?: string;
+        order_index?: number;
+        video_url: string;
+        handbook_rules: string;
+        handbook_terms: string;
+        formulas: string;
+        mini_exam_count: number;
+        homework_pdf: string;
+        homework_deadline: string;
+        mini_exam_questions?: string;
+      }>;
+      setLessonRows(rows as LessonContentOverride[]);
+      setLessons(mergeLessons([], rows));
+      if (!schemaError) setSaveError("");
+    } catch (error) {
+      setSaveError(formatSaveError(getErrorMessage(error)));
+      setLessonRows([]);
+      setLessons([]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const rows = (data ?? []) as Array<{
-      lesson_id: string;
-      title: string;
-      subject_id?: string;
-      subject_name?: string;
-      section_id?: string;
-      section_name?: string;
-      sub_section_id?: string;
-      sub_section_name?: string;
-      order_index?: number;
-      video_url: string;
-      handbook_rules: string;
-      handbook_terms: string;
-      formulas: string;
-      mini_exam_count: number;
-      homework_pdf: string;
-      homework_deadline: string;
-      mini_exam_questions?: string;
-    }>;
-    setLessonRows(rows as LessonContentOverride[]);
-    if (!schemaError) setSaveError("");
-    setLessons(mergeLessons(getAdminLessons(), rows));
-    setLoading(false);
   }, [supabase]);
 
   useEffect(() => {
     let active = true;
-
-    const load = async () => {
-      await loadLessons();
-      if (!active) return;
-    };
-
-    load();
+    queueMicrotask(() => {
+      if (active) void loadLessons();
+    });
 
     const lessonChannel = supabase
       .channel("admin-lesson-content")
@@ -249,6 +258,10 @@ export default function AdminContentPage() {
     };
   }, [loadLessons, supabase]);
 
+  useLiveRefresh(() => {
+    void loadLessons();
+  });
+
   const sections = useMemo(
     () => getRuntimeSections(runtimeCurricula, newLesson.subjectId),
     [newLesson.subjectId, runtimeCurricula]
@@ -271,31 +284,40 @@ export default function AdminContentPage() {
   }, [lessons, search, filterSubject]);
 
   const handleSave = async (data: LessonAdminData) => {
+    let nextError = "";
     setSaveError("");
+    setActionBusy("save");
     if (!user) {
-      setSaveError("Admin session topilmadi. Qayta login qiling.");
+      nextError = "Admin session topilmadi. Qayta login qiling.";
       await loadLessons();
+      setSaveError(nextError);
+      setActionBusy(null);
       return;
     }
-    const { error } = await supabase.from("lesson_content").upsert(
-      {
-        ...toLessonContentOverride(data),
-        updated_by: user.id,
-      } as never,
-      { onConflict: "lesson_id" }
-    );
-    if (error) {
-      setSaveError(formatSaveError(error.message));
+    try {
+      const { error } = await supabase.from("lesson_content").upsert(
+        {
+          ...toLessonContentOverride(data),
+          updated_by: user.id,
+        } as never,
+        { onConflict: "lesson_id" }
+      );
+      if (error) throw error;
+      setEditing(null);
+      notifyDataChanged();
+    } catch (error) {
+      nextError = formatSaveError(getErrorMessage(error));
+    } finally {
       await loadLessons();
-      return;
+      if (nextError) setSaveError(nextError);
+      setActionBusy(null);
     }
-    setLessons((prev) => prev.map((l) => (l.id === data.id ? data : l)));
-    setEditing(null);
   };
 
   const handleAddLesson = async () => {
+    let nextError = "";
     setSaveError("");
-    const subj = curricula.find((c) => c.id === newLesson.subjectId);
+    const subj = runtimeCurricula.find((c) => c.id === newLesson.subjectId);
     const effectiveSectionId = newLesson.sectionId || subj?.sections[0]?.id || "";
     const sec = subj?.sections.find((s) => s.id === effectiveSectionId);
     const effectiveSubSectionId = newLesson.subSectionId || sec?.subSections[0]?.id || "";
@@ -304,7 +326,8 @@ export default function AdminContentPage() {
       setSaveError("Yangi dars qo'shishdan oldin section va sub-section mavjud bo'lishi kerak.");
       return;
     }
-    const id = `new-${Date.now()}`;
+    setActionBusy("add");
+    const id = createUniqueId("new");
     const item: LessonAdminData = {
       id,
       title: newLesson.title || "Yangi dars",
@@ -325,53 +348,60 @@ export default function AdminContentPage() {
       homeworkDeadline: "",
     };
     if (!user) {
-      setSaveError("Admin session topilmadi. Qayta login qiling.");
+      nextError = "Admin session topilmadi. Qayta login qiling.";
       await loadLessons();
+      setSaveError(nextError);
+      setActionBusy(null);
       return;
     }
-    const { error } = await supabase.from("lesson_content").upsert(
-      {
-        ...toLessonContentOverride(item),
-        updated_by: user.id,
-      } as never,
-      { onConflict: "lesson_id" }
-    );
-    if (error) {
-      setSaveError(formatSaveError(error.message));
+    try {
+      const { error } = await supabase.from("lesson_content").upsert(
+        {
+          ...toLessonContentOverride(item),
+          updated_by: user.id,
+        } as never,
+        { onConflict: "lesson_id" }
+      );
+      if (error) throw error;
+      setShowAdd(false);
+      setEditing(item);
+      notifyDataChanged();
+    } catch (error) {
+      nextError = formatSaveError(getErrorMessage(error));
+    } finally {
       await loadLessons();
-      return;
+      if (nextError) setSaveError(nextError);
+      setActionBusy(null);
     }
-    setLessons((prev) => [item, ...prev]);
-    setShowAdd(false);
-    setEditing(item);
   };
 
   const handleDeleteLesson = async (lesson: LessonAdminData) => {
+    let nextError = "";
     setSaveError("");
+    setActionBusy("delete");
     if (!user) {
-      setSaveError("Admin session topilmadi. Qayta login qiling.");
+      nextError = "Admin session topilmadi. Qayta login qiling.";
       await loadLessons();
+      setSaveError(nextError);
+      setActionBusy(null);
       return;
     }
 
-    const { error } = await supabase
-      .from("lesson_content")
-      .delete()
-      .eq("lesson_id", lesson.id);
-
-    if (error) {
-      setSaveError(formatSaveError(error.message));
+    try {
+      const { error } = await supabase
+        .from("lesson_content")
+        .delete()
+        .eq("lesson_id", lesson.id);
+      if (error) throw error;
+      setEditing(null);
+      notifyDataChanged();
+    } catch (error) {
+      nextError = formatSaveError(getErrorMessage(error));
+    } finally {
       await loadLessons();
-      return;
+      if (nextError) setSaveError(nextError);
+      setActionBusy(null);
     }
-
-    const baseIds = new Set(getAdminLessons().map((item) => item.id));
-    if (baseIds.has(lesson.id)) {
-      await loadLessons();
-    } else {
-      setLessons((prev) => prev.filter((item) => item.id !== lesson.id));
-    }
-    setEditing(null);
   };
 
   const upsertStructureNode = async (node: CurriculumStructureNode) => {
@@ -379,23 +409,29 @@ export default function AdminContentPage() {
       setSaveError("Admin session topilmadi. Qayta login qiling.");
       return false;
     }
+    let nextError = "";
     setStructureBusy(true);
-    const { error } = await supabase.from("curriculum_structure").upsert(
-      {
-        ...node,
-        parent_section_id: node.parent_section_id ?? "",
-        updated_by: user.id,
-        updated_at: new Date().toISOString(),
-      } as never,
-      { onConflict: "node_type,subject_id,node_id,parent_section_id" }
-    );
-    setStructureBusy(false);
-    if (error) {
-      setSaveError(error.message);
+    try {
+      const { error } = await supabase.from("curriculum_structure").upsert(
+        {
+          ...node,
+          parent_section_id: node.parent_section_id ?? "",
+          updated_by: user.id,
+          updated_at: new Date().toISOString(),
+        } as never,
+        { onConflict: "node_type,subject_id,node_id,parent_section_id" }
+      );
+      if (error) throw error;
+      notifyDataChanged();
+      return true;
+    } catch (error) {
+      nextError = formatSaveError(getErrorMessage(error));
       return false;
+    } finally {
+      await loadLessons();
+      if (nextError) setSaveError(nextError);
+      setStructureBusy(false);
     }
-    await loadLessons();
-    return true;
   };
 
   const createSection = async (subjectId: string) => {
@@ -404,7 +440,7 @@ export default function AdminContentPage() {
     const orderRaw = window.prompt("Section tartibi", String((runtimeCurricula.find((subject) => subject.id === subjectId)?.sections.length ?? 0) + 1));
     const order = Number(orderRaw || "999");
     await upsertStructureNode({
-      node_id: `section-${Date.now()}`,
+      node_id: createUniqueId("section"),
       node_type: "section",
       subject_id: subjectId,
       parent_section_id: "",
@@ -451,7 +487,7 @@ export default function AdminContentPage() {
     const name = window.prompt(`${sectionName} uchun yangi sub-section nomi`);
     if (!name?.trim()) return;
     await upsertStructureNode({
-      node_id: `sub-${Date.now()}`,
+      node_id: createUniqueId("sub"),
       node_type: "sub_section",
       subject_id: subjectId,
       parent_section_id: sectionId,
@@ -523,7 +559,7 @@ export default function AdminContentPage() {
         </Card>
         <Card>
           <Layers className="w-7 h-7 text-accent mb-2" />
-          <p className="text-2xl font-bold">{stats.sections}</p>
+          <p className="text-2xl font-bold">{runtimeCurricula.reduce((total, subject) => total + subject.sections.length, 0)}</p>
           <p className="text-sm text-text-muted">Sectionlar</p>
         </Card>
         <Card>
@@ -541,8 +577,14 @@ export default function AdminContentPage() {
                 <h3 className="font-semibold">{subject.name}</h3>
                 <p className="text-xs text-text-muted">Section va sub-section boshqaruvi</p>
               </div>
-              <Button variant="outline" size="sm" loading={structureBusy} onClick={() => createSection(subject.id)}>
-                <FolderPlus className="w-4 h-4" /> Section qo'shish
+              <Button
+                variant="outline"
+                size="sm"
+                loading={structureBusy}
+                disabled={Boolean(actionBusy)}
+                onClick={() => createSection(subject.id)}
+              >
+                <FolderPlus className="w-4 h-4" /> Section qo&apos;shish
               </Button>
             </div>
             <div className="space-y-3">
@@ -556,14 +598,14 @@ export default function AdminContentPage() {
                         <p className="text-xs text-text-muted">{lessonCount} ta dars</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => createSubSection(subject.id, section.id, section.name)}>
+                        <Button variant="ghost" size="sm" disabled={structureBusy || Boolean(actionBusy)} onClick={() => createSubSection(subject.id, section.id, section.name)}>
                           <Plus className="w-3.5 h-3.5" /> Sub-section
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => editSection(subject.id, section.id, section.name, section.order)}>
+                        <Button variant="outline" size="sm" disabled={structureBusy || Boolean(actionBusy)} onClick={() => editSection(subject.id, section.id, section.name, section.order)}>
                           <Pencil className="w-3.5 h-3.5" /> Tahrirlash
                         </Button>
-                        <Button variant="danger" size="sm" onClick={() => deleteSection(subject.id, section.id, section.name, lessonCount)}>
-                          <Trash2 className="w-3.5 h-3.5" /> O'chirish
+                        <Button variant="danger" size="sm" disabled={structureBusy || Boolean(actionBusy)} onClick={() => deleteSection(subject.id, section.id, section.name, lessonCount)}>
+                          <Trash2 className="w-3.5 h-3.5" /> O&apos;chirish
                         </Button>
                       </div>
                     </div>
@@ -575,11 +617,11 @@ export default function AdminContentPage() {
                             <p className="text-xs text-text-muted">{subSection.lessons.length} ta dars</p>
                           </div>
                           <div className="flex flex-wrap gap-2">
-                            <Button variant="outline" size="sm" onClick={() => editSubSection(subject.id, section.id, subSection.id, subSection.name)}>
+                            <Button variant="outline" size="sm" disabled={structureBusy || Boolean(actionBusy)} onClick={() => editSubSection(subject.id, section.id, subSection.id, subSection.name)}>
                               <Pencil className="w-3.5 h-3.5" /> Tahrirlash
                             </Button>
-                            <Button variant="danger" size="sm" onClick={() => deleteSubSection(subject.id, section.id, subSection.id, subSection.name, subSection.lessons.length)}>
-                              <Trash2 className="w-3.5 h-3.5" /> O'chirish
+                            <Button variant="danger" size="sm" disabled={structureBusy || Boolean(actionBusy)} onClick={() => deleteSubSection(subject.id, section.id, subSection.id, subSection.name, subSection.lessons.length)}>
+                              <Trash2 className="w-3.5 h-3.5" /> O&apos;chirish
                             </Button>
                           </div>
                         </div>
@@ -678,10 +720,15 @@ export default function AdminContentPage() {
             />
           </div>
           <div className="flex gap-2 mt-4">
-            <Button variant="primary" onClick={handleAddLesson}>
+            <Button
+              variant="primary"
+              loading={actionBusy === "add"}
+              disabled={!sections.length || !subSections.length || structureBusy}
+              onClick={handleAddLesson}
+            >
               Darsni yaratish
             </Button>
-            <Button variant="outline" onClick={() => setShowAdd(false)}>
+            <Button variant="outline" disabled={Boolean(actionBusy)} onClick={() => setShowAdd(false)}>
               Bekor
             </Button>
           </div>
@@ -756,7 +803,7 @@ export default function AdminContentPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="muted">{lesson.miniExamCount} MCQ</Badge>
                 <Button variant="danger" size="sm" onClick={() => setEditing(lesson)}>
-                  <Trash2 className="w-3.5 h-3.5" /> O'chirish
+                  <Trash2 className="w-3.5 h-3.5" /> O&apos;chirish
                 </Button>
                 <Button variant="primary" size="sm" onClick={() => setEditing(lesson)}>
                   <Pencil className="w-3.5 h-3.5" /> Tahrirlash
@@ -777,6 +824,8 @@ export default function AdminContentPage() {
         onClose={() => setEditing(null)}
         onSave={handleSave}
         onDelete={handleDeleteLesson}
+        saving={actionBusy === "save"}
+        deleting={actionBusy === "delete"}
       />
     </div>
   );

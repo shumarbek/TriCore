@@ -5,9 +5,10 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/contexts/AuthProvider";
 import { useLanguage } from "@/contexts/LanguageProvider";
+import { notifyDataChanged } from "@/lib/live-refresh";
 import { Ban } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function AppShell({
   children,
@@ -23,6 +24,10 @@ export function AppShell({
   const router = useRouter();
   const pathname = usePathname();
   const banned = profile?.status === "banned";
+
+  useEffect(() => {
+    notifyDataChanged();
+  }, [pathname]);
 
   return (
     <div className="flex min-h-screen">

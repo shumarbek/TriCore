@@ -1,12 +1,7 @@
 import { chemistryCurriculum } from "./chemistry";
 import { mathematicsCurriculum } from "./math";
 import { physicsCurriculum } from "./physics";
-import type {
-  CurriculumLesson,
-  CurriculumSection,
-  SubjectCurriculum,
-  SubSection,
-} from "./types";
+import type { CurriculumSection, SubjectCurriculum, SubSection } from "./types";
 import type { LessonContentOverride } from "@/lib/lesson-content";
 
 export type CurriculumStructureNode = {
@@ -20,130 +15,86 @@ export type CurriculumStructureNode = {
 };
 
 export function getBaseCurricula(): SubjectCurriculum[] {
-  return [mathematicsCurriculum, physicsCurriculum, chemistryCurriculum];
-}
-
-function cloneLesson(lesson: CurriculumLesson): CurriculumLesson {
-  return { ...lesson };
-}
-
-function cloneSubSection(subSection: SubSection): SubSection {
-  return {
-    ...subSection,
-    lessons: subSection.lessons.map(cloneLesson),
-  };
-}
-
-function cloneSection(section: CurriculumSection): CurriculumSection {
-  return {
-    ...section,
-    subSections: section.subSections.map(cloneSubSection),
-  };
+  return [mathematicsCurriculum, physicsCurriculum, chemistryCurriculum].map((subject) => ({
+    id: subject.id,
+    name: subject.name,
+    sections: [],
+  }));
 }
 
 export function buildRuntimeCurricula(
   structureRows: CurriculumStructureNode[],
   lessonRows: LessonContentOverride[] = []
 ): SubjectCurriculum[] {
-  const sectionRows = structureRows.filter((row) => row.node_type === "section");
-  const subSectionRows = structureRows.filter((row) => row.node_type === "sub_section");
+  const sectionRows = structureRows
+    .filter((row) => row.node_type === "section" && !row.is_deleted)
+    .sort((a, b) => a.order_index - b.order_index);
+  const subSectionRows = structureRows
+    .filter((row) => row.node_type === "sub_section" && !row.is_deleted)
+    .sort((a, b) => a.order_index - b.order_index);
 
   return getBaseCurricula().map((subject) => {
-    const subjectSections = sectionRows.filter((row) => row.subject_id === subject.id);
-    const runtimeSections = subject.sections
-      .map((section) => {
-        const override = subjectSections.find((row) => row.node_id === section.id);
-        if (override?.is_deleted) return null;
+    const explicitSubjectSections = sectionRows.filter((row) => row.subject_id === subject.id);
+    const inferredSubjectSections = lessonRows
+      .filter((row) => row.subject_id === subject.id && row.section_id)
+      .reduce<CurriculumStructureNode[]>((acc, row) => {
+        const sectionId = row.section_id ?? "";
+        if (!sectionId) return acc;
+        if (explicitSubjectSections.some((section) => section.node_id === sectionId)) return acc;
+        if (acc.some((section) => section.node_id === sectionId)) return acc;
+        acc.push({
+          node_id: sectionId,
+          node_type: "section",
+          subject_id: subject.id,
+          parent_section_id: "",
+          name: row.section_name || sectionId,
+          order_index: row.order_index ?? 999,
+          is_deleted: false,
+        });
+        return acc;
+      }, []);
 
-        const subRows = subSectionRows.filter(
-          (row) => row.subject_id === subject.id && row.parent_section_id === section.id
-        );
-
-        const subSections = section.subSections
-          .map((subSection) => {
-            const subOverride = subRows.find((row) => row.node_id === subSection.id);
-            if (subOverride?.is_deleted) return null;
-            return {
-              _order: subOverride?.order_index ?? section.subSections.findIndex((item) => item.id === subSection.id),
-              ...cloneSubSection(subSection),
-              name: subOverride?.name || subSection.name,
-              lessons: [
-                ...subSection.lessons.map((lesson) => {
-                  const lessonOverride = lessonRows.find((row) => row.lesson_id === lesson.id);
-                  return {
-                    ...cloneLesson(lesson),
-                    title: lessonOverride?.title || lesson.title,
-                    order: lessonOverride?.order_index ?? lesson.order,
-                  };
-                }),
-                ...lessonRows
-                  .filter(
-                    (row) =>
-                      row.subject_id === subject.id &&
-                      row.section_id === section.id &&
-                      row.sub_section_id === subSection.id &&
-                      !subSection.lessons.some((lesson) => lesson.id === row.lesson_id)
-                  )
-                  .map((row) => ({
-                    id: row.lesson_id,
-                    title: row.title,
-                    order: row.order_index ?? 999,
-                    status: "available" as const,
-                  })),
-              ].sort((a, b) => a.order - b.order),
-            };
-          })
-          .filter(Boolean) as Array<SubSection & { _order: number }>;
-
-        const customSubSections = subRows
-          .filter(
-            (row) => !row.is_deleted && !section.subSections.some((subSection) => subSection.id === row.node_id)
-          )
-          .map((row) => ({
-            _order: row.order_index,
-            id: row.node_id,
-            name: row.name,
-            lessons: lessonRows
-              .filter(
-                (lesson) =>
-                  lesson.subject_id === subject.id &&
-                  lesson.section_id === section.id &&
-                  lesson.sub_section_id === row.node_id
-              )
-              .map((lesson) => ({
-                id: lesson.lesson_id,
-                title: lesson.title,
-                order: lesson.order_index ?? 999,
-                status: "available" as const,
-              }))
-              .sort((a, b) => a.order - b.order),
-          }));
-
-        return {
-          ...cloneSection(section),
-          name: override?.name || section.name,
-          order: override?.order_index ?? section.order,
-          subSections: [...subSections, ...customSubSections]
-            .sort((a, b) => a._order - b._order)
-            .map(({ _order, ...subSection }) => subSection),
-        };
-      })
-      .filter(Boolean) as CurriculumSection[];
-
-    const customSections = subjectSections
-      .filter((row) => !row.is_deleted && !subject.sections.some((section) => section.id === row.node_id))
-      .map((row) => ({
+    const sections = [...explicitSubjectSections, ...inferredSubjectSections]
+      .sort((a, b) => a.order_index - b.order_index)
+      .map<CurriculumSection>((row) => ({
         id: row.node_id,
         name: row.name,
         order: row.order_index,
-        subSections: subSectionRows
-          .filter(
-            (subRow) =>
-              !subRow.is_deleted &&
-              subRow.subject_id === subject.id &&
-              subRow.parent_section_id === row.node_id
-          )
-          .map((subRow) => ({
+        subSections: [
+          ...subSectionRows.filter(
+            (subRow) => subRow.subject_id === subject.id && subRow.parent_section_id === row.node_id
+          ),
+          ...lessonRows
+            .filter(
+              (lesson) =>
+                lesson.subject_id === subject.id &&
+                lesson.section_id === row.node_id &&
+                lesson.sub_section_id &&
+                !subSectionRows.some(
+                  (subRow) =>
+                    subRow.subject_id === subject.id &&
+                    subRow.parent_section_id === row.node_id &&
+                    subRow.node_id === lesson.sub_section_id
+                )
+            )
+            .reduce<CurriculumStructureNode[]>((acc, lesson) => {
+              const subSectionId = lesson.sub_section_id ?? "";
+              if (!subSectionId) return acc;
+              if (acc.some((subRow) => subRow.node_id === subSectionId)) return acc;
+              acc.push({
+                node_id: subSectionId,
+                node_type: "sub_section",
+                subject_id: subject.id,
+                parent_section_id: row.node_id,
+                name: lesson.sub_section_name || subSectionId,
+                order_index: lesson.order_index ?? 999,
+                is_deleted: false,
+              });
+              return acc;
+            }, []),
+        ]
+          .sort((a, b) => a.order_index - b.order_index)
+          .map<SubSection>((subRow) => ({
             id: subRow.node_id,
             name: subRow.name,
             lessons: lessonRows
@@ -165,7 +116,7 @@ export function buildRuntimeCurricula(
 
     return {
       ...subject,
-      sections: [...runtimeSections, ...customSections].sort((a, b) => a.order - b.order),
+      sections,
     };
   });
 }

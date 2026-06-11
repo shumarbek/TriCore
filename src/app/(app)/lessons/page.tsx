@@ -7,11 +7,12 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useLanguage } from "@/contexts/LanguageProvider";
 import { buildRuntimeCurricula, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
 import type { LessonContentOverride } from "@/lib/lesson-content";
+import { useLiveRefresh } from "@/lib/live-refresh";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { BookOpen, Lock, Play } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const statusBadge = {
   completed: "success" as const,
@@ -25,6 +26,7 @@ export default function LessonsPage() {
   const [filter, setFilter] = useState<string>("all");
   const [contentRows, setContentRows] = useState<LessonContentOverride[]>([]);
   const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
+  const supabase = useMemo(() => createClient(), []);
   const allLessons = useMemo(() => {
     return buildRuntimeCurricula(structureRows, contentRows).flatMap((subject) =>
       subject.sections.flatMap((section) =>
@@ -43,17 +45,23 @@ export default function LessonsPage() {
     );
   }, [contentRows, structureRows]);
 
-  useEffect(() => {
-    const supabase = createClient();
-    const loadOverrides = async () => {
+  const loadOverrides = useCallback(async () => {
       const [{ data: lessonData }, { data: structureData }] = await Promise.all([
         supabase.from("lesson_content").select("*"),
         supabase.from("curriculum_structure").select("*").order("order_index", { ascending: true }),
       ]);
       setContentRows((lessonData ?? []) as LessonContentOverride[]);
       setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
-    };
+  }, [supabase]);
+
+  useLiveRefresh(() => {
     void loadOverrides();
+  });
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadOverrides();
+    });
     const lessonChannel = supabase
       .channel("lesson-content-list")
       .on(
@@ -79,7 +87,7 @@ export default function LessonsPage() {
       supabase.removeChannel(lessonChannel);
       supabase.removeChannel(structureChannel);
     };
-  }, []);
+  }, [loadOverrides, supabase]);
 
   const filtered = filter === "all" ? allLessons : allLessons.filter((l) => l.subjectId === filter);
   const active = filtered.slice(0, 60);

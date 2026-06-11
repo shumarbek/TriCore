@@ -8,12 +8,13 @@ import { useAuth } from "@/contexts/AuthProvider";
 import { useLanguage } from "@/contexts/LanguageProvider";
 import { buildRuntimeCurricula, type CurriculumStructureNode } from "@/lib/data/curriculum/runtime";
 import type { LessonContentOverride } from "@/lib/lesson-content";
+import { useLiveRefresh } from "@/lib/live-refresh";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { ArrowRight, Lock } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export default function LearningPage() {
   const { user } = useAuth();
@@ -21,6 +22,7 @@ export default function LearningPage() {
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [contentRows, setContentRows] = useState<LessonContentOverride[]>([]);
   const [structureRows, setStructureRows] = useState<CurriculumStructureNode[]>([]);
+  const supabase = useMemo(() => createClient(), []);
   const tx = {
     uz: { title: "Learning", description: "Fanni tanlang va roadmap bo'yicha harakat qiling", progress: "Progress", open: "Roadmapni ochish", flow: "Learning Flow", locked: "Qulflangan", available: "Ochiq", inProgress: "Jarayonda", completed: "Yakunlangan" },
     kaa: { title: "Oqiw", description: "Pándi tańlap roadmap boyınsha júriń", progress: "Progress", open: "Roadmaptı ashıw", flow: "Oqıw aǵımı", locked: "Qulıplangan", available: "Ashıq", inProgress: "Jarayonda", completed: "Juwmaqlanǵan" },
@@ -28,9 +30,7 @@ export default function LearningPage() {
     en: { title: "Learning", description: "Choose a subject and follow your roadmap", progress: "Progress", open: "Open Roadmap", flow: "Learning Flow", locked: "Locked", available: "Available", inProgress: "In Progress", completed: "Completed" },
   }[language];
 
-  useEffect(() => {
-    const supabase = createClient();
-    const load = async () => {
+  const load = useCallback(async () => {
       const [progressResult, lessonResult, structureResult] = await Promise.all([
         user
           ? supabase.from("lesson_progress").select("lesson_id, status").eq("user_id", user.id)
@@ -44,8 +44,16 @@ export default function LearningPage() {
       setCompletedIds(done);
       setContentRows((lessonResult.data ?? []) as LessonContentOverride[]);
       setStructureRows((structureResult.data ?? []) as CurriculumStructureNode[]);
-    };
+  }, [supabase, user]);
+
+  useLiveRefresh(() => {
     void load();
+  });
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void load();
+    });
     const channels = [
       supabase
         .channel(`learning-curriculum-structure`)
@@ -75,7 +83,7 @@ export default function LearningPage() {
         supabase.removeChannel(channel);
       });
     };
-  }, [user]);
+  }, [load, supabase, user]);
 
   const runtimeSubjects = useMemo(() => {
     return buildRuntimeCurricula(structureRows, contentRows).map((subject) => ({

@@ -20,6 +20,7 @@ import {
   getVideoInfo,
   type LessonContentOverride,
 } from "@/lib/lesson-content";
+import { notifyDataChanged, useLiveRefresh } from "@/lib/live-refresh";
 import { parseMiniExamQuestions } from "@/lib/mini-exam";
 import { XP_REWARDS, addXp, incrementDailyActivity } from "@/lib/learning/gamification";
 import { createClient } from "@/lib/supabase/client";
@@ -27,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { BookMarked, Bookmark, Copy, Download, ScrollText, StickyNote, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const tabs = [
   "Ma'lumotnoma",
@@ -79,12 +80,18 @@ export default function LessonDetailPage() {
     () => buildRuntimeCurricula(structureRows, allLessonRows),
     [allLessonRows, structureRows]
   );
-  const effectiveMeta = findRuntimeLessonById(runtimeCurricula, lessonId);
+  const effectiveMeta = useMemo(
+    () => findRuntimeLessonById(runtimeCurricula, lessonId),
+    [lessonId, runtimeCurricula]
+  );
   const lesson = effectiveMeta?.lesson;
   const subjectName = effectiveMeta?.subjectName ?? "";
   const sectionName = effectiveMeta?.sectionName ?? "";
   const subSectionName = effectiveMeta?.subSectionName ?? "";
-  const lessonGroup = lesson ? getRuntimeLessonGroup(runtimeCurricula, lesson.id) : [];
+  const lessonGroup = useMemo(
+    () => (lesson ? getRuntimeLessonGroup(runtimeCurricula, lesson.id) : []),
+    [lesson, runtimeCurricula]
+  );
   const lessonIndex = lessonGroup.findIndex((item) => item.id === lesson?.id);
   const previous = lessonIndex > 0 ? lessonGroup[lessonIndex - 1] : null;
   const next = lessonIndex >= 0 && lessonIndex < lessonGroup.length - 1 ? lessonGroup[lessonIndex + 1] : null;
@@ -106,9 +113,9 @@ export default function LessonDetailPage() {
   const videoInfo = getVideoInfo(videoUrl);
   const formattedDuration = formatDuration(videoDuration);
 
-  useEffect(() => {
+  const loadContent = useCallback(async () => {
     if (!lessonId) return;
-    const loadContent = async () => {
+    setContentLoading(true);
       const [{ data }, { data: lessonData }, { data: structureData }] = await Promise.all([
         supabase.from("lesson_content").select("*").eq("lesson_id", lessonId).maybeSingle(),
         supabase.from("lesson_content").select("*"),
@@ -118,9 +125,13 @@ export default function LessonDetailPage() {
       setAllLessonRows((lessonData ?? []) as LessonContentOverride[]);
       setStructureRows((structureData ?? []) as CurriculumStructureNode[]);
       setContentLoading(false);
-    };
+  }, [lessonId, supabase]);
 
-    void loadContent();
+  useEffect(() => {
+    if (!lessonId) return;
+    queueMicrotask(() => {
+      void loadContent();
+    });
     const lessonChannel = supabase
       .channel(`lesson-content-${lessonId}`)
       .on(
@@ -146,11 +157,13 @@ export default function LessonDetailPage() {
       supabase.removeChannel(lessonChannel);
       supabase.removeChannel(structureChannel);
     };
-  }, [lessonId, supabase]);
+  }, [lessonId, loadContent, supabase]);
 
   useEffect(() => {
     if (!videoUrl) {
-      setVideoDuration(null);
+      queueMicrotask(() => {
+        setVideoDuration(null);
+      });
       return;
     }
 
@@ -168,16 +181,17 @@ export default function LessonDetailPage() {
   }, [videoUrl]);
 
   useEffect(() => {
-    setMiniExamStartedAt(null);
-    setMiniExamOpen(false);
-    setMiniExamAnswers({});
-    setMiniExamResult(null);
-    setMiniExamRewardClaimed(false);
+    queueMicrotask(() => {
+      setMiniExamStartedAt(null);
+      setMiniExamOpen(false);
+      setMiniExamAnswers({});
+      setMiniExamResult(null);
+      setMiniExamRewardClaimed(false);
+    });
   }, [lessonId, contentOverride?.mini_exam_questions]);
 
-  useEffect(() => {
+  const loadProgress = useCallback(async () => {
     if (!user || !lesson) return;
-    const load = async () => {
       const { data } = await supabase
         .from("lesson_progress")
         .select("lesson_id, status")
@@ -189,14 +203,28 @@ export default function LessonDetailPage() {
       const group = lessonGroup.length ? lessonGroup.map((item) => item.id) : [lesson.id];
       const firstPending = group.find((id) => !completed.has(id)) ?? lesson.id;
       setIsUnlocked(completed.has(lesson.id) || firstPending === lesson.id);
-    };
-
-    void load();
   }, [lesson, lessonGroup, supabase, user]);
 
   useEffect(() => {
+    queueMicrotask(() => {
+      void loadProgress();
+    });
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`lesson-progress-${user.id}-${lessonId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "lesson_progress", filter: `user_id=eq.${user.id}` },
+        () => void loadProgress()
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [lessonId, loadProgress, supabase, user?.id]);
+
+  const loadMiniExamState = useCallback(async () => {
     if (!user || !lesson) return;
-    const loadMiniExamState = async () => {
       const { data } = await supabase
         .from("exam_results")
         .select("correct_answers, total_questions")
@@ -224,14 +252,16 @@ export default function LessonDetailPage() {
         total,
         xpAwarded: correct * 5,
       });
-    };
-
-    void loadMiniExamState();
   }, [effectiveMeta?.sectionId, effectiveMeta?.subjectId, lesson, miniExamQuestions.length, supabase, user]);
 
   useEffect(() => {
+    queueMicrotask(() => {
+      void loadMiniExamState();
+    });
+  }, [loadMiniExamState]);
+
+  const loadDiscussion = useCallback(async () => {
     if (!user || !lesson) return;
-    const loadDiscussion = async () => {
       const { data } = await supabase
         .from("messages")
         .select("id, body, admin_reply, created_at, replied_at, status")
@@ -248,9 +278,13 @@ export default function LessonDetailPage() {
           status: string;
         }>)
       );
-    };
+  }, [lesson, supabase, user]);
 
-    void loadDiscussion();
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadDiscussion();
+    });
+    if (!user?.id || !lesson?.id) return;
     const channel = supabase
       .channel(`lesson-discussion-${user.id}-${lesson.id}`)
       .on(
@@ -264,7 +298,14 @@ export default function LessonDetailPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [lesson, supabase, user]);
+  }, [lesson?.id, loadDiscussion, supabase, user?.id]);
+
+  useLiveRefresh(() => {
+    void loadContent();
+    void loadProgress();
+    void loadMiniExamState();
+    void loadDiscussion();
+  });
 
   const markLessonCompleted = async () => {
     if (!user || !effectiveMeta || !lesson || isCompleted || !isUnlocked) return;
@@ -300,6 +341,7 @@ export default function LessonDetailPage() {
 
     await refreshProfile();
     setIsCompleted(true);
+    notifyDataChanged();
     setBusy(false);
     if (next) router.push(`/lessons/${next.id}`);
   };
@@ -337,6 +379,7 @@ export default function LessonDetailPage() {
       time_spent_minutes: timeSpentMinutes,
     });
     await refreshProfile();
+    notifyDataChanged();
     setMiniExamResult({
       correct: correctAnswers,
       total: totalQuestions,
@@ -371,6 +414,7 @@ export default function LessonDetailPage() {
     }
     setDiscussionBody("");
     setDiscussionBusy(false);
+    notifyDataChanged();
   };
 
   const tabIcons: Partial<Record<(typeof tabs)[number], React.ComponentType<{ className?: string }>>> = {

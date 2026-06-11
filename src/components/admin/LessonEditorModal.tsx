@@ -20,19 +20,35 @@ const editorTabs = [
 interface LessonEditorModalProps {
   lesson: LessonAdminData | null;
   onClose: () => void;
-  onSave: (data: LessonAdminData) => void;
-  onDelete?: (lesson: LessonAdminData) => void;
+  onSave: (data: LessonAdminData) => Promise<void> | void;
+  onDelete?: (lesson: LessonAdminData) => Promise<void> | void;
+  saving?: boolean;
+  deleting?: boolean;
 }
 
-export function LessonEditorModal({ lesson, onClose, onSave, onDelete }: LessonEditorModalProps) {
+export function LessonEditorModal({
+  lesson,
+  onClose,
+  onSave,
+  onDelete,
+  saving = false,
+  deleting = false,
+}: LessonEditorModalProps) {
   const [tab, setTab] = useState<(typeof editorTabs)[number]["id"]>("basic");
   const [form, setForm] = useState<LessonAdminData | null>(lesson);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
-    setForm(lesson);
-    setTab("basic");
-    setConfirmDelete(false);
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setForm(lesson);
+      setTab("basic");
+      setConfirmDelete(false);
+    });
+    return () => {
+      active = false;
+    };
   }, [lesson]);
 
   if (!lesson || !form) return null;
@@ -149,12 +165,14 @@ export function LessonEditorModal({ lesson, onClose, onSave, onDelete }: LessonE
             {onDelete && (
               <Button
                 variant="danger"
+                loading={deleting}
+                disabled={saving}
                 onClick={() => {
                   if (!confirmDelete) {
                     setConfirmDelete(true);
                     return;
                   }
-                  onDelete(form);
+                  void onDelete(form);
                 }}
               >
                 <Trash2 className="w-4 h-4" />
@@ -162,8 +180,15 @@ export function LessonEditorModal({ lesson, onClose, onSave, onDelete }: LessonE
               </Button>
             )}
             <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>Bekor</Button>
-            <Button variant="primary" onClick={() => onSave(form)}>Saqlash</Button>
+            <Button variant="outline" disabled={saving || deleting} onClick={onClose}>Bekor</Button>
+            <Button
+              variant="primary"
+              loading={saving}
+              disabled={deleting}
+              onClick={() => void onSave(form)}
+            >
+              Saqlash
+            </Button>
             </div>
           </div>
         </motion.div>

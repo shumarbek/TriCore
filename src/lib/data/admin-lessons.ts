@@ -1,5 +1,3 @@
-import { getAllLessons } from "./curriculum";
-
 export interface LessonAdminData {
   id: string;
   title: string;
@@ -20,37 +18,14 @@ export interface LessonAdminData {
   homeworkDeadline: string;
 }
 
-const defaults = (lesson: ReturnType<typeof getAllLessons>[0]): LessonAdminData => ({
-  id: lesson.id,
-  title: lesson.title,
-  subjectId: lesson.subjectId,
-  subjectName: lesson.subjectName,
-  sectionId: lesson.sectionId,
-  sectionName: lesson.sectionName,
-  subSectionId: lesson.subSectionId,
-  subSectionName: lesson.subSectionName,
-  order: lesson.order,
-  videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-  handbookRules: "1. Birliklarni SI tizimida yozing.\n2. Har bosqichni alohida qatorga ajrating.",
-  handbookTerms: "Asosiy atama|Ta'rif satri",
-  formulas: "F = ma\nv = s / t",
-  miniExamCount: 10,
-  miniExamQuestions: "[]",
-  homeworkPdf: "",
-  homeworkDeadline: "",
-});
-
 export function getAdminLessons(): LessonAdminData[] {
-  return getAllLessons().map((l) => defaults(l));
+  return [];
 }
 
 export function getAdminLessonStats() {
-  const lessons = getAllLessons();
-  const subjects = new Set(lessons.map((l) => l.subjectId));
-  const sections = new Set(lessons.map((l) => `${l.subjectId}-${l.sectionName}`));
   return {
-    subjects: subjects.size,
-    sections: sections.size,
-    lessons: lessons.length,
+    subjects: 3,
+    sections: 0,
+    lessons: 0,
   };
 }
