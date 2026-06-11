@@ -56,6 +56,14 @@ function createUniqueId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
+function buildLessonContentPayload(lesson: LessonAdminData, userId: string) {
+  return {
+    ...toLessonContentOverride(lesson),
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  };
+}
+
 function mergeLessons(
   baseLessons: LessonAdminData[],
   overrides: Array<{
@@ -224,6 +232,31 @@ export default function AdminContentPage() {
     }
   }, [supabase]);
 
+  const saveLessonContent = useCallback(
+    async (lesson: LessonAdminData, userId: string) => {
+      const payload = buildLessonContentPayload(lesson, userId);
+      const { data: existing, error: lookupError } = await supabase
+        .from("lesson_content")
+        .select("lesson_id")
+        .eq("lesson_id", lesson.id)
+        .maybeSingle();
+      if (lookupError) throw lookupError;
+
+      if (existing) {
+        const { error } = await supabase
+          .from("lesson_content")
+          .update(payload as never)
+          .eq("lesson_id", lesson.id);
+        if (error) throw error;
+        return;
+      }
+
+      const { error } = await supabase.from("lesson_content").insert(payload as never);
+      if (error) throw error;
+    },
+    [supabase]
+  );
+
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
@@ -295,14 +328,7 @@ export default function AdminContentPage() {
       return;
     }
     try {
-      const { error } = await supabase.from("lesson_content").upsert(
-        {
-          ...toLessonContentOverride(data),
-          updated_by: user.id,
-        } as never,
-        { onConflict: "lesson_id" }
-      );
-      if (error) throw error;
+      await saveLessonContent(data, user.id);
       setEditing(null);
       notifyDataChanged();
     } catch (error) {
@@ -317,16 +343,82 @@ export default function AdminContentPage() {
   const handleAddLesson = async () => {
     let nextError = "";
     setSaveError("");
+    if (!user) {
+      nextError = "Admin session topilmadi. Qayta login qiling.";
+      await loadLessons();
+      setSaveError(nextError);
+      return;
+    }
     const subj = runtimeCurricula.find((c) => c.id === newLesson.subjectId);
-    const effectiveSectionId = newLesson.sectionId || subj?.sections[0]?.id || "";
-    const sec = subj?.sections.find((s) => s.id === effectiveSectionId);
-    const effectiveSubSectionId = newLesson.subSectionId || sec?.subSections[0]?.id || "";
-    const sub = sec?.subSections.find((s) => s.id === effectiveSubSectionId);
-    if (!effectiveSectionId || !effectiveSubSectionId || !sub) {
-      setSaveError("Yangi dars qo'shishdan oldin section va sub-section mavjud bo'lishi kerak.");
+    if (!subj) {
+      setSaveError("Fan topilmadi. Sahifani yangilab qayta urinib ko'ring.");
       return;
     }
     setActionBusy("add");
+    let effectiveSectionId = newLesson.sectionId || subj.sections[0]?.id || "";
+    let sec = subj.sections.find((section) => section.id === effectiveSectionId);
+    let effectiveSubSectionId = newLesson.subSectionId || sec?.subSections[0]?.id || "";
+    let sub = sec?.subSections.find((subSection) => subSection.id === effectiveSubSectionId);
+
+    try {
+      if (!sec) {
+        effectiveSectionId = createUniqueId("section");
+        const defaultSectionName = "Asosiy section";
+        const { error } = await supabase.from("curriculum_structure").upsert(
+          {
+            node_id: effectiveSectionId,
+            node_type: "section",
+            subject_id: subj.id,
+            parent_section_id: "",
+            name: defaultSectionName,
+            order_index: 1,
+            is_deleted: false,
+            updated_by: user.id,
+            updated_at: new Date().toISOString(),
+          } as never,
+          { onConflict: "node_type,subject_id,node_id,parent_section_id" }
+        );
+        if (error) throw error;
+        sec = {
+          id: effectiveSectionId,
+          name: defaultSectionName,
+          order: 1,
+          subSections: [],
+        };
+      }
+
+      if (!sub) {
+        effectiveSubSectionId = createUniqueId("sub");
+        const defaultSubSectionName = "Asosiy sub-section";
+        const { error } = await supabase.from("curriculum_structure").upsert(
+          {
+            node_id: effectiveSubSectionId,
+            node_type: "sub_section",
+            subject_id: subj.id,
+            parent_section_id: effectiveSectionId,
+            name: defaultSubSectionName,
+            order_index: 1,
+            is_deleted: false,
+            updated_by: user.id,
+            updated_at: new Date().toISOString(),
+          } as never,
+          { onConflict: "node_type,subject_id,node_id,parent_section_id" }
+        );
+        if (error) throw error;
+        sub = {
+          id: effectiveSubSectionId,
+          name: defaultSubSectionName,
+          lessons: [],
+        };
+      }
+    } catch (error) {
+      nextError = formatSaveError(getErrorMessage(error));
+      await loadLessons();
+      setSaveError(nextError);
+      setActionBusy(null);
+      return;
+    }
+
     const id = createUniqueId("new");
     const item: LessonAdminData = {
       id,
@@ -347,22 +439,8 @@ export default function AdminContentPage() {
       homeworkPdf: newLesson.homeworkPdf,
       homeworkDeadline: "",
     };
-    if (!user) {
-      nextError = "Admin session topilmadi. Qayta login qiling.";
-      await loadLessons();
-      setSaveError(nextError);
-      setActionBusy(null);
-      return;
-    }
     try {
-      const { error } = await supabase.from("lesson_content").upsert(
-        {
-          ...toLessonContentOverride(item),
-          updated_by: user.id,
-        } as never,
-        { onConflict: "lesson_id" }
-      );
-      if (error) throw error;
+      await saveLessonContent(item, user.id);
       setShowAdd(false);
       setEditing(item);
       notifyDataChanged();
